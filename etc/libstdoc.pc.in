@@ -1,0 +1,9 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: libstdoc
+Description: Minimal standard C library, freestanding, aarch64 Linux
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lstdoc
+Cflags: -I${includedir}

@@ -1,0 +1,196 @@
+[42]
+return=5
+[-42]
+return=6
+[0]
+return=4
+[-2147483648]
+return=14
+[0]
+return=4
+[4294967295]
+return=13
+[10]
+return=5
+[37777777777]
+return=14
+[ff]
+return=5
+[FF]
+return=5
+[ffffffff]
+return=11
+[A]
+return=4
+[    A]
+return=8
+[A    ]
+return=8
+[hello]
+return=8
+[   hi]
+return=8
+[hi   ]
+return=8
+[   hi]
+return=8
+[he]
+return=5
+[he        ]
+return=13
+[  libstdoc]
+return=13
+[(null)]
+return=9
+[]
+return=3
+[(null)]
+return=9
+[(null)]
+return=9
+[    (null)]
+return=13
+[%]
+return=4
+[(nil)]
+return=8
+[               (nil)]
+return=23
+[(nil)               ]
+return=23
+[(nil)]
+return=8
+[+42]
+return=6
+[ 42]
+return=6
+[-42]
+return=6
+[  +42]
+return=8
+[+0000042]
+return=11
+[ 0000042]
+return=11
+[-0000042]
+return=11
+[+0042   ]
+return=11
+[5]
+return=4
+[5]
+return=4
+[ff]
+return=5
+[FF]
+return=5
+[0xff]
+return=7
+[0XFF]
+return=7
+[0]
+return=4
+[000]
+return=6
+[0x0a]
+return=7
+[0x0ff]
+return=8
+[010]
+return=6
+[0100]
+return=7
+[0]
+return=4
+[0]
+return=4
+[0]
+return=4
+[0010]
+return=7
+[  010]
+return=8
+[42]
+return=5
+[   42]
+return=8
+[42   ]
+return=8
+[00042]
+return=8
+[00042]
+return=8
+[]
+return=3
+[+]
+return=4
+[ ]
+return=4
+[     ]
+return=8
+[00]
+return=5
+[100]
+return=6
+[    0042]
+return=11
+[   -0042]
+return=11
+[0042    ]
+return=11
+[   -0042]
+return=11
+[ -042]
+return=8
+[  000]
+return=8
+[0042    ]
+return=11
+[42   |]
+return=9
+[      42|]
+return=12
+[42|]
+return=6
+[hel|]
+return=7
+[42|]
+return=6
+[    -042|]
+return=12
+[042     |]
+return=12
+[44]
+return=5
+[255]
+return=6
+[4464]
+return=7
+[65535]
+return=8
+[-123456789]
+return=13
+[123456789]
+return=12
+[-9223372036854775808]
+return=23
+[18446744073709551615]
+return=23
+[ffffffffffffffff]
+return=19
+[deadbeefcafe]
+return=15
+[18446744073709551615]
+return=23
+[-1]
+return=5
+[-9223372036854775808]
+return=23
+[18446744073709551615]
+return=23
+Azizah is 15 years old
+return=23
+plain text without conversions at all
+return=38
+mixed x str -1 1 fff FFF 100 (nil) %    07 ab   |]
+return=51

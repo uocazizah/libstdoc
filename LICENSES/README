@@ -1,0 +1,131 @@
+libstdoc licenses
+===================
+
+This directory documents every license that applies to the libstdoc
+repository.  The library is multi licensed: every recipient may
+choose between three licenses, per use, at no cost.
+
+
+The three licenses
+------------------
+
+GPL-2.0-or-later (GPLv2+)
+-------------------------
+
+Full text: GPL-2.0.txt
+
+The GNU General Public License, version 2 or any later version.  A
+program that contains or is derived from libstdoc and is distributed
+must be distributed in total under a GPL-compatible license: in
+practice, under the GPL family itself, with the source code offered to
+the recipients.
+
+The "or any later version" option is granted by the copyright holder
+of this project, and is stated in the header of every source file.
+
+LGPL-2.1-or-later (LGPLv2+)
+---------------------------
+
+Full text: LGPL-2.1.txt
+
+The GNU Lesser General Public License, version 2.1 or any later
+version.  The LGPL applies to libstdoc itself.  A program that merely
+uses the library (for example, links against libstdoc.so) stays under
+the license chosen by its own author, including a proprietary license.
+
+The obligations of the LGPL on the user of the library are, in short:
+
+* Any work that uses the library must let the user relink it against
+  a modified version of the library.  For dynamic linking against
+  libstdoc.so this is automatic.  For static linking against
+  libstdoc.a, the LGPL requires that the user can perform the relink,
+  for example by shipping the object files or by using a shared
+  library.
+
+* Any modified version of the library itself must be released in
+  total under the LGPL.
+
+* The unmodified library must remain available in its unmodified form,
+  and the notices of the library must be preserved.
+
+The precise and legally binding conditions are in LGPL-2.1.txt,
+section 4 ("Modified Versions"), section 5 ("Combining a Modified
+Work with the Library") and section 6 ("Combining Applications with
+the Library").  Read them before redistributing.
+
+Apache-2.0
+----------
+
+Full text: Apache-2.0.txt
+
+The Apache License, Version 2.0.  A permissive license with an
+explicit patent grant from the contributors.  A work that contains or
+is derived from libstdoc may be distributed under any license,
+including a proprietary license, with no obligation to release the
+source code of your own work.
+
+This option is the right choice when your project must link against
+libstdoc statically, for example because shared objects or DLLs are
+not an option in your environment: the Apache License imposes no
+conditions on linking at all, static or dynamic.  The conditions of
+redistribution are limited to keeping the notices, stating changes to
+modified files, and including a copy of the license.
+
+The patent grant of section 3 includes a termination clause: a
+licensee who patent sues anyone over the licensed code loses their
+rights under the license.
+
+Note on compatibility: the Apache License 2.0 is one-way incompatible
+with the GNU GPL version 2, so a combined work may not be distributed
+under GPLv2.  Because the GPL option of libstdoc is "version 2 or any
+later version", you may distribute such a combination under GPLv3
+instead, which accepts Apache-2.0 code.
+
+
+How the choice works
+--------------------
+
+* The choice belongs to whoever redistributes the library or a work
+  containing it.  Choosing one license does not remove the other
+  options: the next recipient may still pick any of the three.
+
+* A contribution to this project is accepted under the same multi
+  licensing: the contributor grants the right to distribute the
+  contribution under all three licenses.  By contributing you confirm
+  that the contribution is your own work and that you grant this
+  permission.
+
+* The header of every source file in this repository carries the
+  multi-license notice.  A file copied out of the tree keeps its
+  licensing information; do not remove the header.
+
+
+Files in this directory
+-----------------------
+
+GPL-2.0.txt       Full text of the GNU General Public License,
+                  version 2 (June 1991), as published by the Free
+                  Software Foundation.  Obtained from
+                  https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+
+LGPL-2.1.txt      Full text of the GNU Lesser General Public
+                  License, version 2.1 (February 1999), as published
+                  by the Free Software Foundation.  Obtained from
+                  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
+
+Apache-2.0.txt    Full text of the Apache License, Version 2.0
+                  (January 2004), as published by the Apache
+                  Software Foundation.  Obtained from the SPDX
+                  License List
+                  (https://www.spdx.org/licenses/Apache-2.0.html),
+                  which carries the unmodified official text.
+
+All three texts are unmodified official texts and must stay
+unmodified.
+
+
+Copyright
+---------
+
+Copyright (C) 2026 Uoc Azizah.  See the AUTHORS file for the list of
+copyright holders.

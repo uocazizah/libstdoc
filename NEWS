@@ -1,14 +1,2 @@
 libstdoc news
 ---------------
-
-Version 1.0.0-beta (2026-6-23)
---------------&------------------
-
-New Features:
-
-* implanting stdoc_printf function
-* implementation of %d, %s, %i, and others
-
-Improvement:
-
-* Project now use GNU-Style

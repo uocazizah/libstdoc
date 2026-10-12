@@ -1,0 +1,16 @@
+# CMake package configuration of libstdoc.
+#
+# Generated from etc/libstdoc-config.cmake.in at build time.  A project
+# that consumes libstdoc does this:
+#
+#     find_package(libstdoc REQUIRED)
+#     target_link_libraries(my_program PRIVATE libstdoc::stdoc)
+#
+# The imported target carries the include directory with it, so no path
+# has to be spelled out by hand.
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/libstdocTargets.cmake")
+
+check_required_components(libstdoc)
