@@ -1,0 +1,146 @@
+streams, system calls and assembly
+==================================
+
+This document covers io/file.c, io/syscall_linux.c, io/string.c and
+the two files in assembly/.  Together they are the layer the rest of
+the library stands on: everything above them is portable C, everything
+here knows the operating system or the architecture.
+
+
+The streams
+-----------
+
+A stream is an opaque object of type stdoc_FILE.  Its layout is an
+implementation detail, but internally it is:
+
+    int     fd            operating-system file descriptor
+    int     error         sticky failure flag
+    int     unbuffered    push every write straight to the kernel
+    size_t  length        bytes currently staged
+    char    buffer[256]   the staging buffer (STDOC_BUFFER_SIZE)
+
+Three streams exist: stdoc_stdout (fd 1), stdoc_stderr (fd 2) and
+stdoc_stdin (fd 0).  stdoc_stdout is buffered; stdoc_stderr is
+unbuffered so that it is never reordered with respect to stdout;
+stdoc_stdin is reserved for a future input release and is not used by
+any function declared in "<libstdoc.h>".
+
+The objects are constant pointers: they stay valid for the whole
+program lifetime, but a caller may not rebind stdout to another
+object.  A stream bound to a descriptor that does not exist cannot be
+obtained through the public interface - test/errors.c builds one on
+purpose to exercise what happens next.
+
+
+Staging
+-------
+
+The staging buffer lives inside the stream object, so staging output
+performs no allocation.  stdoc_stream_write stages bytes and hands
+them to the operating system in a single write when any of three
+events happens:
+
+  * the buffer is full,
+  * a newline is staged (this is what keeps line-oriented output
+    ordered without an exit-time hook, which the freestanding startup
+    path does not provide),
+  * the write is to an unbuffered stream and the caller has finished.
+
+A payload larger than the buffer is handled by repeated flushes rather
+than by an oversized stack copy.
+
+stdoc_stream_flush pushes the staged bytes and clears the buffer; it
+succeeds when nothing is staged.  stdoc_stream_discard throws the
+staged bytes away without writing them, which is what a failed
+formatted call does so that half of a conversion never reaches the
+output.
+
+Failure is sticky: once stream->error is set, every further write
+fails without touching the system-call layer.
+
+
+The operating-system layer
+--------------------------
+
+io/syscall_linux.c is the only place where Linux system-call numbers
+and the "-errno in the return register" convention appear.  The
+numbers are written as plain constants - no "<asm/unistd.h>" or other
+kernel header is consulted, so the build has no dependency outside
+this repository:
+
+    57    close
+    63    read
+    64    write
+    94    exit_group
+
+The wrappers are stdoc_sys_write, stdoc_sys_read, stdoc_sys_close and
+stdoc_sys_exit.  The first three return 0 on success and -1 on
+failure, mirroring the convention documented for the public functions;
+the raw kernel result is classified with a single unsigned comparison
+against 4096, because the kernel reports errors as "-errno" in the
+range -4095 .. -1 and anything else is a non-negative result.
+
+stdoc_sys_exit uses exit_group rather than exit so that every thread
+of the process is terminated.  libstdoc creates no threads, but a
+program linked against it may.  It never returns.
+
+
+The system-call trampoline (assembly/syscall.S)
+-----------------------------------------------
+
+The Linux aarch64 system-call ABI differs from the ordinary C calling
+convention: the number is carried in x8 rather than x0, the arguments
+in x0..x5, and the result comes back in x0.  Arguments are passed in
+the same registers the C convention uses, so the trampoline only has
+to shift every argument one register to the right, move the number
+into place and execute "svc #0":
+
+    stdoc_syscall:  mov x8, x0        /* number       */
+                    mov x0, x1        /* arguments    */
+                    ...               /* x0 .. x5     */
+                    svc #0
+                    ret
+
+The raw kernel return value is returned unmodified, so callers
+interpret the "-4095 .. -1" range themselves.  Registers x19..x30 are
+preserved across the call as the C calling convention requires; the
+function touches only argument, result and status registers, so no
+explicit save or restore is needed.
+
+Written in GNU assembler (GAS) syntax, as the project conventions
+require.
+
+
+The entry point (assembly/start_aarch64.S)
+------------------------------------------
+
+The kernel enters _start with the initial stack layout:
+
+    sp        argc
+    sp + 8    argv[0], ..., argv[argc], NULL
+              envp[0], ..., NULL
+
+_start clears the frame pointer and the link register so that a stack
+unwinder stops cleanly at the bottom of the stack, reads the three
+values, calls main(argc, argv, envp) and passes main's return value to
+stdoc_sys_exit, which becomes the exit status.
+
+There is deliberately no more here than the ABI requires: no
+constructors, no ".init_array" walk, no thread-local storage and no
+atexit handling.  Those facilities are documented as unsupported by
+this release, which is also why the formatted functions flush
+themselves instead of registering an exit-time flush.
+
+
+The string helpers (io/string.c)
+--------------------------------
+
+stdoc_strlen, stdoc_memcpy and stdoc_memset live here because the
+library is linked with -nostdlib: it may not call those names from a
+host C library, since they would either be missing at link time or
+silently resolve to a different implementation than the one under
+test.  They are prefixed so they never collide when libstdoc is linked
+into a hosted program, and none of them is part of the public API.
+
+The heap allocator in mem/heap.c uses stdoc_memcpy to move block
+headers in and out of the arena; see docs/heap for why.
