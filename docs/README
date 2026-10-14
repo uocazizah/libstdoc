@@ -1,0 +1,61 @@
+libstdoc documentation
+======================
+
+Every document in this directory is plain text, in the style of the
+top-level README, and describes one aspect of the repository.  Begin
+with "repository", which maps the whole tree, then read whichever part
+you need.
+
+
+Documents
+---------
+
+repository
+    Every top-level file and directory, what it contains, and which
+    document describes it in more detail.
+
+building
+    How to configure, build, install and consume the library, what the
+    build options do, why the compiler flags differ between the
+    library and the tests, and what a port to another operating system
+    or architecture has to provide.
+
+testing
+    The test programs, how each kind of test is verified, how to
+    regenerate a golden file, and the rules a new test has to follow.
+
+formatting
+    The formatting engine behind stdoc_printf: the dialect it
+    implements, how one call flows through the code, and where it
+    refuses to produce output.
+
+io
+    Streams and their staging buffer, the operating-system layer with
+    its system-call numbers, and the two assembly files that talk to
+    the kernel.
+
+heap
+    The dynamic memory allocator: the arena, the block layout, the
+    allocation and release algorithms, the safe variants and their
+    failure modes, and the accounting the tests rely on.
+
+
+Reading order for a first-time reader
+-------------------------------------
+
+    repository -> building -> testing
+
+and then, depending on the task:
+
+    formatting or heap -> io -> building
+
+
+Conventions used in these documents
+-----------------------------------
+
+  * Commands are run from the repository root unless stated
+    otherwise.
+  * C source is ISO C17; assembly is GNU assembler (GAS) syntax.
+  * A document never overrides AGENTS.md or the public comments in
+    "<libstdoc.h>".  When they disagree, the header is the contract:
+    fix the document.
