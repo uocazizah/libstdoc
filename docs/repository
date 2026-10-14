@@ -1,0 +1,187 @@
+map of the libstdoc repository
+==============================
+
+libstdoc is a small, freestanding standard C library for Linux on
+aarch64.  It is built and linked without any host C library: it
+provides its own program entry point, its own system-call layer and
+its own formatting engine, which is what makes the test programs a
+complete demonstration of the library rather than a hosted build that
+happens to contain it.
+
+This document lists every entry in the repository and says what it is
+for.  The documents listed at the end describe the larger pieces.
+
+
+Top-level entries
+-----------------
+
+    .github/          Automation: dependency and code scanning.
+    .gitignore        Ignore rules for objects, libraries and builds.
+    AGENTS.md         Conventions for automated agents working here.
+    AUTHORS           Who maintains the project.
+    ChangeLog         Points at Git as the detailed change history.
+    CMakeLists.txt    The build: library, tests, installation.
+    docs/             This directory: the documentation.
+    etc/              Templates for the installed package metadata.
+    include/          The public headers, the API of the library.
+    io/               The C sources of the input/output layer.
+    LICENSE           The license overview and how to choose.
+    LICENSES/         The full license texts and their explanation.
+    mem/              The dynamic memory allocator.
+    NEWS              Release notes, newest release first.
+    README            The project overview and the license summary.
+    test/             The test programs and their build rules.
+    build/            A local, out-of-source build directory; it is
+                      ignored by Git and not part of the source.
+
+
+assembly/ - the runtime in assembly
+-----------------------------------
+
+    start_aarch64.S   Program entry point.  The kernel enters _start
+                      with argc, argv and envp on the stack; the file
+                      clears the frame chain, calls main(argc, argv,
+                      envp) and hands main's return value to
+                      stdoc_sys_exit.  There are no constructors, no
+                      ".init_array" walk and no atexit handling: the
+                      freestanding startup path does not provide
+                      them.  Documented in docs/io.
+    syscall.S         The system-call trampoline.  It converts the
+                      ordinary C calling convention into the Linux
+                      aarch64 system-call convention (number in x8,
+                      arguments in x0..x5, result in x0) with a single
+                      "svc #0".  Documented in docs/io.
+
+
+io/ - the input/output layer
+----------------------------
+
+    stdoc_io.h        The internal interface shared by this layer and
+                      the platform layer.  Nothing in it is public
+                      API.  It also defines STDOC_BUFFER_SIZE, the
+                      size of a stream's staging buffer.
+    file.c            The three standard streams (stdoc_stdin,
+                      stdoc_stdout, stdoc_stderr) and the staging
+                      logic: stdoc_stream_write, stdoc_stream_flush
+                      and stdoc_stream_discard.  Documented in
+                      docs/io.
+    vfprintf.c        The formatting engine, stdoc_vfprintf.  Parser
+                      and formatter live in one translation unit.
+                      Documented in docs/formatting.
+    printf.c          stdoc_printf: the stdoc_stdout wrapper around
+                      stdoc_vfprintf.
+    fprintf.c         stdoc_fprintf: the same for a given stream.
+    syscall_linux.c   The operating-system wrappers
+                      (stdoc_sys_write, stdoc_sys_read, stdoc_sys_close,
+                      stdoc_sys_exit) and the only place where Linux
+                      system-call numbers appear.  Documented in
+                      docs/io.
+    string.c          The internal helpers stdoc_strlen, stdoc_memcpy
+                      and stdoc_memset, which exist so that the
+                      library links with "-nostdlib" without taking
+                      symbols from a host C library.
+
+
+mem/ - dynamic memory
+---------------------
+
+    heap.c            The allocator: a static arena, first-fit block
+                      allocation with splitting and merging, the safe
+                      variants that terminate the process on a
+                      detected fault, and the accounting the tests
+                      assert on.  Documented in docs/heap.
+    stdoc_mem.h       The internal header: STDOC_HEAP_SIZE and the
+                      accounting queries.  It is not installed.
+
+
+include/ - the public API
+-------------------------
+
+    libstdoc.h        The C header: the streams, stdoc_printf,
+                      stdoc_fprintf and the dynamic memory functions
+                      stdoc_malloc, stdoc_free, stdoc_malloc_safe and
+                      stdoc_free_safe.  The comments in this file are
+                      the contract of the library.  It depends only on
+                      "<stdarg.h>" and "<stddef.h>", so it works in a
+                      freestanding build.  Documented in
+                      docs/formatting and docs/heap.
+    libstdoc.hpp      The C++ entry point: it includes libstdoc.h
+                      inside an "extern "C"" specification so the
+                      symbols are not mangled.  No C++ runtime is
+                      required.
+
+
+etc/ - installed package metadata
+---------------------------------
+
+    libstdoc.pc.in        Template of the pkg-config file, filled in
+                          at configure time with the chosen prefix.
+    libstdoc-config.cmake.in
+                          Template of the CMake package config, so a
+                          consumer can "find_package(libstdoc)".
+
+
+test/ - the test programs
+-------------------------
+
+    CMakeLists.txt    Builds the tests and registers them with CTest.
+    index.c           The original smoke test (legacy: built without
+                      "-Werror").
+    index.cxx         The same source as a C++ program, proving the
+                      header works from C++.  Built as a hosted
+                      program (legacy: also without "-Werror").
+    format.c          The formatting engine test; its golden file was
+                      produced by a reference C library.
+    errors.c          The failure paths of the formatted functions.
+    heap.c            The allocator, its safe variants and the leak
+                      accounting.
+    heap_abort.c      The fail-fast paths: one scenario per run,
+                      selected on the command line.
+    expected-index.txt, expected-format.txt
+                      Golden output the programs are compared with.
+    CompareOutput.cmake
+                      Compares a program's output and exit status
+                      with a golden file.
+    CheckFatal.cmake  Requires a program to end with the documented
+                      fatal status 134.
+    The whole directory is documented in docs/testing.
+
+
+.github/ - automation
+---------------------
+
+    dependabot.yml    Keeps the GitHub Actions dependencies updated.
+    workflows/codeql.yml
+                      The CodeQL analysis workflow.  Neither file
+                      takes part in the build: this repository builds
+                      with no network access.
+
+
+Top-level files
+---------------
+
+    README            Project overview, repository structure and the
+                      license summary.  Points here for details.
+    NEWS              Release notes; the newest release is first.
+                      1.0.0-beta covers the history from the commit
+                      "major changes" to the present tree.
+    ChangeLog         States that Git holds the detailed history.
+    AUTHORS           The project founder, maintainer and developer.
+    LICENSE           Explains the three licenses the recipient may
+                      choose from.
+    LICENSES/         GPL-2.0.txt, LGPL-2.1.txt, Apache-2.0.txt and a
+                      README that explains how the choice works.
+    AGENTS.md         The conventions that govern changes to this
+                      tree: C17, freestanding rules, style, the
+                      priority of instructions.  Read it before
+                      editing anything.
+
+
+Where to read next
+------------------
+
+    docs/building     configure, build, test, install, porting.
+    docs/testing      what every test proves.
+    docs/formatting   the printf engine.
+    docs/io           streams, system calls, assembly.
+    docs/heap         the allocator.
