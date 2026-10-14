@@ -1,0 +1,203 @@
+the dynamic memory allocator
+============================
+
+libstdoc allocates from a private static arena of STDOC_HEAP_SIZE
+bytes (4096 by default).  The heap never asks the operating system
+for memory, which is what lets it exist in a freestanding build, and
+it makes the worst case leak bounded: a program that loses every
+pointer it owns can lose at most the size of the arena, and the
+allocator's accounting still reports it.
+
+
+The public API
+--------------
+
+    void *stdoc_malloc(size_t size);
+    void  stdoc_free(void *p);
+    void *stdoc_malloc_safe(size_t count, size_t size);
+    void  stdoc_free_safe(void *p);
+
+The authoritative contract is the comment above these declarations in
+"<libstdoc.h>".  In short:
+
+stdoc_malloc
+    Returns memory aligned for any object, or null.  A size of 0
+    allocates nothing and returns null, which is not a failure.
+
+stdoc_free
+    Forgiving by design: a null pointer, a pointer from outside the
+    heap, a pointer into the middle of a block or an already free
+    block is ignored without modifying anything.  Use the safe
+    variant when such a pointer must be reported instead.
+
+stdoc_malloc_safe
+    Checks that "count * size" does not overflow, and zeroes the
+    memory it returns.  A request it cannot satisfy - a wrapping size
+    or an exhausted heap - writes a diagnostic to stdoc_stderr and
+    terminates the process with status 134.  The only null result is
+    the documented "nothing was requested" case.
+
+stdoc_free_safe
+    Same validation as stdoc_free, but a pointer that is not the start
+    of a live block is reported: diagnostic to stdoc_stderr, then
+    termination with status 134.  A null pointer still releases
+    nothing and is not an error.
+
+The heap is not thread-safe: libstdoc creates no threads and provides
+no synchronisation.
+
+
+Sizing
+------
+
+STDOC_HEAP_SIZE is defined in mem/stdoc_mem.h with a default of 4096
+and may be overridden without editing a header:
+
+    cmake -S . -B build -DSTDOC_HEAP_SIZE=1024
+    cc -DSTDOC_HEAP_SIZE=8192 ...
+
+The value must be a positive number of bytes; the build rejects
+anything else at configure time.  A static assertion requires the
+arena to be at least four alignment units - 64 bytes on aarch64 - so
+it can always hold a block.  The tests do not depend on the value:
+they fill whatever heap the library was built with.
+
+
+Layout of the arena
+-------------------
+
+The arena is one contiguous run of blocks.  Every block starts with a
+header, followed by its payload:
+
+    arena (STDOC_HEAP_SIZE bytes, aligned for any object)
+
+    +-------------------+-------+-------+-------------------+-----
+    | payload (size_t)  | state | magic | payload bytes ... |
+    +-------------------+-------+-------+-------------------+-----
+    ^ block start                                ^ payload:
+                                                  what malloc returns
+
+    payload    usable bytes after the header, always a multiple of
+               the alignment
+    state      free or used
+    magic      0x53444F43 ("SDOC"): marks bytes as a header this
+               allocator wrote
+
+The header is rounded up to _Alignof(max_align_t) - 16 bytes on
+aarch64 - and every payload size is a multiple of that alignment
+too, so a payload is suitably aligned for any object.  A size request
+is rounded up the same way before it is looked for.
+
+
+Allocation
+----------
+
+1. A size of 0 returns null immediately.  Otherwise the size is
+   rounded up to the alignment; a size that would wrap while being
+   rounded fails without scanning the arena.
+2. On the first use the arena becomes a single free block spanning it
+   all.
+3. The block list is scanned first-fit for a free block whose payload
+   is large enough.
+4. The chosen block is split when the leftover can hold another block
+   (a header plus one aligned payload); a smaller leftover stays with
+   the block rather than becoming an unusable fragment.
+5. The block becomes used, the accounting is increased, and the
+   payload is returned.
+
+A request larger than the arena can hold fails without scanning.
+
+
+Release and merging
+-------------------
+
+Before anything is touched, the pointer is classified:
+
+    outside the arena or misaligned   ignored / reported
+    not the start of a block          ignored / reported
+    block already free                double free
+    header does not add up            heap block is corrupted
+
+The check that rejects a pointer into the middle of a block is a walk
+of the block list: only offsets the list actually steps over are
+accepted, and a payload size that does not add up stops the walk
+instead of running off the end of the arena.  A header that a merge
+already absorbed still reads as free, which is how a double free of a
+block no longer on the list is recognised.
+
+A valid release marks the block free, decreases the accounting, and
+then merges every run of adjacent free blocks, so the arena returns to
+a single block once everything has been released.  The headers of
+absorbed blocks stay behind as stale bytes inside the payload; the
+list walk never lands on them again.
+
+
+Failure modes of the safe variants
+----------------------------------
+
+Each of these writes a line to stdoc_stderr and exits with status 134
+(the conventional status of an aborted process, 128 + SIGABRT):
+
+    libstdoc: stdoc_malloc_safe: allocation size overflows
+    libstdoc: stdoc_malloc_safe: out of memory
+    libstdoc: stdoc_free_safe: pointer is outside the libstdoc heap
+    libstdoc: stdoc_free_safe: pointer is not the start of a heap block
+    libstdoc: stdoc_free_safe: block is already free (double free)
+    libstdoc: stdoc_free_safe: heap block is corrupted
+
+The diagnostic goes to stdoc_stderr, which is unbuffered, so it
+reaches the operating system before the exit system call.
+
+Because a failure ends the process, these paths are tested one
+scenario per run: test/heap_abort.c selects the scenario on the
+command line and CheckFatal.cmake asserts the status.  See
+docs/testing.
+
+
+Accounting (internal)
+---------------------
+
+mem/stdoc_mem.h declares three queries used by the tests:
+
+    size_t stdoc_heap_live_bytes(void);    payload bytes reserved
+    size_t stdoc_heap_live_blocks(void);   blocks they live in
+    size_t stdoc_heap_capacity(void);      size of the arena
+
+Both counts are zero once every allocation has been released, which
+is what the tests assert after each scenario.  The header is not part
+of the public API and is not installed.
+
+
+Who allocates inside the library
+--------------------------------
+
+Only the formatting engine: every formatted call borrows one block of
+97 bytes (65 for digit storage, 32 for the padding chunk) and gives it
+back before returning, falling back to stack buffers when the heap is
+exhausted.  Nothing else in the library allocates - in particular the
+stream staging buffer stays inside the stream object.  See
+docs/formatting.
+
+
+Design notes and limits
+-----------------------
+
+  * No system call is used, so the allocator behaves identically on
+    any operating system that builds the library, and nothing here
+    needs to grow the heap.
+  * Inside mem/heap.c the arena - a declared "unsigned char" array -
+    is only read and written through character lvalues, and block
+    headers are moved with stdoc_memcpy rather than by casting the
+    storage to a structure pointer, so strict aliasing is respected
+    for everything the library itself does with it.  What a caller
+    does with the payload it receives is the caller's own effective
+    type, as with any other allocator.
+  * A pointer that is freed after its offset has been handed out again
+    to a later allocation cannot be told apart from a valid pointer of
+    that later allocation.  No allocator can: the information is not
+    in the pointer.  Double frees of a block that has not been reused,
+    invalid pointers, interior pointers and misaligned pointers are
+    all detected.
+  * The tests never allocate more than a few kilobytes, so a leak in a
+    test stays that small by construction, and the accounting turns it
+    into a failing check anyway.
