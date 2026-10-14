@@ -1,0 +1,122 @@
+testing libstdoc
+===============
+
+The tests are registered with CTest and run with:
+
+    cmake -S . -B build
+    cmake --build build
+    ctest --test-dir build --output-on-failure
+
+Run a subset by name:
+
+    ctest --test-dir build -R heap --output-on-failure
+
+
+What is registered today
+--------------------------
+
+    index_output          golden output of index.c
+    format_output         golden output of format.c
+    error_handling        failure paths (self-checking)
+    heap_checks           allocator, safe variants, leak counts
+    heap_abort_overflow   safe size overflow terminates with 134
+    heap_abort_oom        safe out of memory terminates with 134
+    heap_abort_double_free
+                          safe double free terminates with 134
+    heap_abort_invalid_pointer
+                          safe bad pointer terminates with 134
+    index_cxx_output      the same golden output, from C++
+
+
+The three kinds of test
+-----------------------
+
+Golden output
+    The program prints, CompareOutput.cmake runs it and requires two
+    things: an exit status of 0 and standard output identical to the
+    golden file in test/.  A test that fails without printing anything
+    is still reported, because the status is checked as well.
+
+    Used by index_output, format_output and index_cxx_output.
+
+Self-checking
+    The program performs its own checks, prints "FAIL: ..." for each
+    one that does not hold, and returns the number of failures as its
+    exit status.  Zero is a pass, so no golden file is needed.
+
+    Used by error_handling (test/errors.c) and heap_checks
+    (test/heap.c).
+
+Fatal paths
+    A scenario that the library is documented to terminate with: the
+    program names the scenario on the command line, does something
+    invalid, and must end inside libstdoc with status 134.
+    CheckFatal.cmake asserts exactly that status, so a scenario that
+    exits cleanly, exits with a different status or crashes fails the
+    test instead of passing unnoticed.
+
+    Used by the four heap_abort_* tests (test/heap_abort.c).
+
+
+Golden files
+------------
+
+test/expected-format.txt was produced from test/format.c by a
+reference C library rather than by libstdoc itself, so the comparison
+is a real check and not a snapshot of whatever the implementation
+happens to do.  Regenerate it from the repository root with a hosted
+compiler:
+
+    cc -DSTDOC_REFERENCE -w test/format.c -o reference
+    ./reference > test/expected-format.txt
+
+test/expected-index.txt matches what index.c prints.  Regenerating a
+golden file changes what the library is held to: review the diff
+before committing it.
+
+
+Rules a new test follows
+------------------------
+
+  * Freestanding tests compile assembly/start_aarch64.S into
+    themselves, so linking never depends on the linker recovering a
+    symbol from an archive, and link with -nostdlib -static -no-pie.
+  * Every C test uses the full warning policy
+    (-Wall -Wextra -Wpedantic -Werror) with -fno-builtin and
+    -fno-stack-protector, unless it is one of the two legacy programs
+    (index.c, index.cxx) that predate the policy.
+  * A test that needs internals includes the internal header of that
+    layer (io/stdoc_io.h or mem/stdoc_mem.h) by adding the directory
+    to that target only.  errors.c does this on purpose: a stream
+    bound to a bad descriptor cannot be obtained through the public
+    interface, and its sticky-error behaviour is worth testing.
+  * A test that checks a value carries its own verdict (exit status),
+    so it needs no golden file.
+
+
+The leak policy of the heap tests
+---------------------------------
+
+The allocator tests use small allocations only.  The arena is 4096
+bytes by default, so anything a bug loses stays a few kilobytes at
+most, and the accounting in mem/stdoc_mem.h turns any leak into a
+failing check: after every scenario the live byte and block counts
+must be back at zero.  The exhaustion scenario deliberately fills the
+arena to prove that a full heap behaves - stdoc_malloc reports it,
+printf falls back to its stack buffer, and releasing everything
+restores the whole arena.
+
+The tests do not depend on the arena size: they fill whatever heap
+the library was built with.  Building with -DSTDOC_HEAP_SIZE=1024 and
+running the same tests is a supported and useful variation.
+
+
+What is not tested
+------------------
+
+  * Sanitizers and valgrind are not run: a "-nostdlib" freestanding
+    program has no runtime for them.  Leak detection uses the
+    library's own accounting instead.
+  * Only the host that builds the project (aarch64 Linux) is
+    exercised.  No other operating system or architecture is claimed
+    to work without a toolchain and a successful build.
