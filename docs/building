@@ -1,0 +1,161 @@
+building libstdoc
+=================
+
+Requirements
+------------
+
+  * CMake 3.16 or newer.
+  * GNU C or Clang (the flags are GNU-style and are only used after
+    the compiler has been identified).
+  * An aarch64 Linux target.  Any other operating system or
+    architecture is rejected at configure time rather than silently
+    mapped onto an implementation that does not match it: the build
+    fails with a message that names what is missing.
+  * Optionally a C++ compiler for the C++ compatibility test.  When
+    none is found, that test is skipped and everything else builds.
+
+No network access, no package manager and no third-party dependency
+is needed at any point.
+
+
+Quick start
+-----------
+
+    cmake -S . -B build
+    cmake --build build
+    ctest --test-dir build --output-on-failure
+
+Builds are out-of-source only: "build" is the conventional directory
+name and is already ignored by Git.
+
+
+Build options
+-------------
+
+STDOC_BUILD_TESTS
+    ON by default.  Set to OFF to build only the library:
+
+        cmake -S . -B build -DSTDOC_BUILD_TESTS=OFF
+
+STDOC_HEAP_SIZE
+    Size in bytes of the dynamic memory arena (4096 by default).  It
+    reaches the allocator as a compile definition, so the configured
+    value is the only one the library is built with.  A value that is
+    not a positive number of bytes is rejected at configure time.
+    The tests do not depend on the value: they fill whatever heap the
+    library was built with and assert that nothing is left allocated,
+    so a smaller heap only makes a leak show up sooner.
+
+    cmake -S . -B build -DSTDOC_HEAP_SIZE=1024
+
+
+How the flags are chosen
+------------------------
+
+The library is compiled as freestanding code and the tests are not,
+for reasons that matter:
+
+    library    -std=c17 -Wall -Wextra -Wpedantic -Werror
+               -ffreestanding -fno-builtin -fno-stack-protector
+
+    tests      -std=c17 -Wall -Wextra -Wpedantic -Werror
+               -fno-builtin -fno-stack-protector
+
+    link       -nostdlib -static -no-pie
+
+  * "-ffreestanding" is deliberately not used for the test programs:
+    it makes clang treat main() as an ordinary function, mangles its
+    name and removes the implicit "return 0", so the program would
+    exit with whatever the last call left in the return register.
+  * "-fno-builtin" stops a call from being rewritten into a compiler
+    builtin that this library does not provide.
+  * "-fno-stack-protector" removes the need for a failure handler
+    symbol that does not exist here.
+  * "-nostdlib -static -no-pie" makes the library's own _start, its
+    printf and its string helpers the only ones available at link
+    time, which is the point of the whole exercise.
+
+Every C file in the project, tests included, is built as C17 with
+extensions off, so no target is ever compiled against a dialect the
+library does not support.
+
+The strict warning set is applied with "-Werror" to everything written
+for this project.  Two legacy test programs (index.c and index.cxx)
+predate that policy and are built without "-Werror"; see
+docs/testing.
+
+
+Installation
+------------
+
+The default prefix is /usr/local, which normally needs the privileges
+of the root user:
+
+    cmake -S . -B build
+    sudo cmake --install build
+
+A per-user installation needs no privileges and puts everything below
+the home directory:
+
+    cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+    cmake --install build
+
+The prefix belongs on the configure line, not on the install line:
+the paths written into libstdoc.pc are fixed when the project is
+configured, so "cmake --install build --prefix ..." moves the files
+but leaves the metadata pointing at the configured prefix.
+
+Four things are installed: the archive, the two headers, a CMake
+package and a pkg-config file.
+
+
+Consuming the library
+---------------------
+
+With pkg-config:
+
+    cc my_program.c $(pkg-config --cflags --libs libstdoc)
+
+A prefix outside the search path of pkg-config, such as the home
+directory, is not looked in by default:
+
+    PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig" \
+        cc my_program.c $(pkg-config --cflags --libs libstdoc)
+
+With CMake:
+
+    find_package(libstdoc REQUIRED)
+    target_link_libraries(my_program PRIVATE libstdoc::stdoc)
+
+pointing CMake at the prefix with -DCMAKE_PREFIX_PATH=<prefix>.  The
+imported target carries the include directory with it.
+
+Note that the library is freestanding by design: a program linked
+without a C runtime needs the entry point that libstdoc provides, and
+one linked with a normal C runtime gets its entry point from there
+instead.
+
+
+Porting
+-------
+
+The platform-specific pieces are chosen in exactly two places, and a
+new operating system or architecture has to satisfy both:
+
+  1. CMakeLists.txt decides what is supported.  It currently accepts
+     Linux on aarch64 only and fails with a clear message for
+     anything else, so an unimplemented target can never silently
+     pick an incompatible implementation.
+
+  2. The implementation itself:
+       assembly/start_aarch64.S  program entry point,
+       assembly/syscall.S        system-call trampoline,
+       io/syscall_linux.c        system-call numbers and conventions.
+
+A port adds the files for its target, teaches the CMake guard about
+them, and keeps every operating system or architecture specific value
+out of the portable code in io/ and mem/.  The system-call layer is
+the only place where numbers and register conventions appear.
+
+Cross-compilation is not claimed to work: it needs a toolchain for
+the target and a successful build before anyone can say it does.
