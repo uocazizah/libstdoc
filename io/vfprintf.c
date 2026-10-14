@@ -38,8 +38,13 @@
  * specification to be marshalled through a second interface.
  *
  * Everything this file needs from the platform is the stream interface
- * declared in "stdoc_io.h", so the file compiles unchanged on any
- * target that provides it.
+ * and the heap, declared in "stdoc_io.h" and "<libstdoc.h>", so the
+ * file compiles unchanged on any target that provides them.
+ *
+ * The scratch buffers of the formatting engine are borrowed from the
+ * libstdoc heap for the duration of one formatted call and fall back
+ * to stack storage when the heap is exhausted; no other allocation is
+ * made here.
  *
  * Unsupported in this release: floating-point conversions, positional
  * arguments ("%1$s"), the "%n" conversion and the "I" / "'" flags.
@@ -84,15 +89,38 @@
 #define STDOC_DIGIT_STORAGE 65
 
 /*
+ * Size of the chunk used to stage a run of padding characters, and
+ * the size of the scratch block that carries both of these buffers.
+ *
+ * The scratch block comes from the libstdoc heap for the duration of
+ * a formatted call (see stdoc_vfprintf) so that the two arrays do not
+ * have to live on the stack.  A call that cannot allocate simply uses
+ * stack buffers of the same size, so an exhausted heap costs stack
+ * space rather than correctness.
+ */
+#define STDOC_SCRATCH_CHUNK 32
+#define STDOC_SCRATCH_SIZE  (STDOC_DIGIT_STORAGE + STDOC_SCRATCH_CHUNK)
+
+/*
  * The stream, the running character count and the sticky failure flag
  * of one formatted call.  All output helpers take this so that a
  * single failure stops the whole call without further system calls.
+ *
+ * "p_scratch" is the STDOC_SCRATCH_SIZE byte block borrowed for the
+ * call: the first STDOC_DIGIT_STORAGE bytes are the digit storage of
+ * output_number, the remaining STDOC_SCRATCH_CHUNK bytes are the
+ * padding chunk of output_repeat.  The two regions are never needed
+ * at the same address, so one block serves both.  A null pointer
+ * means the heap had no block to spare and every helper falls back to
+ * its own stack buffer.
  */
 typedef struct stdoc_output
 {
     stdoc_FILE *stream;
     int         count;
     int         failed;
+    char       *p_scratch;
+    int         scratch_from_heap;
 } stdoc_output;
 
 /*
@@ -106,6 +134,21 @@ typedef struct stdoc_spec
     int          length;
     char         conversion;
 } stdoc_spec;
+
+/*
+ * Give the borrowed scratch block back.  Every path out of
+ * stdoc_vfprintf calls this, so a formatted call can never leave the
+ * heap holding a block.
+ */
+static void output_release_scratch(stdoc_output *p_output)
+{
+    if (p_output->scratch_from_heap != 0)
+    {
+        stdoc_free(p_output->p_scratch);
+        p_output->p_scratch = NULL;
+        p_output->scratch_from_heap = 0;
+    }
+}
 
 /*
  * Emit "length" bytes, or record the failure.  The count is clamped to
@@ -144,26 +187,34 @@ static void output_write(stdoc_output *p_output, const char *p_bytes,
  * Emit "count" copies of one character.  The bytes are staged in
  * chunks so that a wide field is a handful of system calls rather
  * than one call per byte.
+ *
+ * The chunk is the tail of the scratch block when the heap had one to
+ * spare, and a stack array of the same size otherwise.
  */
 static void output_repeat(stdoc_output *p_output, char value, size_t count)
 {
-    char   chunk[32];
+    char   fallback[STDOC_SCRATCH_CHUNK];
+    char  *p_chunk;
     size_t index;
 
-    for (index = 0; index < sizeof chunk; index = index + 1)
+    p_chunk = (p_output->p_scratch != NULL)
+                  ? p_output->p_scratch + STDOC_DIGIT_STORAGE
+                  : fallback;
+
+    for (index = 0; index < STDOC_SCRATCH_CHUNK; index = index + 1)
     {
-        chunk[index] = value;
+        p_chunk[index] = value;
     }
 
-    while (count >= sizeof chunk)
+    while (count >= STDOC_SCRATCH_CHUNK)
     {
-        output_write(p_output, chunk, sizeof chunk);
-        count = count - sizeof chunk;
+        output_write(p_output, p_chunk, STDOC_SCRATCH_CHUNK);
+        count = count - STDOC_SCRATCH_CHUNK;
     }
 
     if (count > 0)
     {
-        output_write(p_output, chunk, count);
+        output_write(p_output, p_chunk, count);
     }
 }
 
@@ -224,8 +275,9 @@ static void output_field(stdoc_output *p_output, const char *p_text,
  *
  * A null terminator is written in front of the digits and the length
  * is reported rather than recovered by scanning: the storage is raw
- * stack memory, so counting its contents would read past the digits
- * into whatever the previous call left there.
+ * scratch memory reused by every conversion, so counting its contents
+ * would read past the digits into whatever the previous call left
+ * there.
  */
 static const char *render_integer(uintmax_t value, unsigned int base,
                                   int uppercase, char *p_storage,
@@ -277,7 +329,8 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
                           uintmax_t magnitude, int negative,
                           unsigned int base, int uppercase)
 {
-    char        storage[STDOC_DIGIT_STORAGE];
+    char        fallback_storage[STDOC_DIGIT_STORAGE];
+    char       *p_storage;
     char        sign;
     const char *p_digits;
     const char *p_prefix;
@@ -292,6 +345,15 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     int         zero_pad;
     int         allow_sign;
 
+    /*
+     * The digits are rendered into the head of the scratch block when
+     * the heap provided one, and into a stack array of the same size
+     * when it did not.  The padding chunk of output_repeat lives past
+     * the end of this region, so the two never overlap.
+     */
+    p_storage = (p_output->p_scratch != NULL) ? p_output->p_scratch
+                                              : fallback_storage;
+
     if ((p_spec->precision == 0) && (magnitude == 0))
     {
         p_digits = "";
@@ -299,8 +361,8 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     }
     else
     {
-        p_digits = render_integer(magnitude, base, uppercase, storage,
-                                  sizeof storage, &digit_count);
+        p_digits = render_integer(magnitude, base, uppercase, p_storage,
+                                  STDOC_DIGIT_STORAGE, &digit_count);
     }
 
     /*
@@ -547,6 +609,15 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
     output.count = 0;
     output.failed = 0;
 
+    /*
+     * Borrow the scratch block for the whole call.  A null result is
+     * not an error: the output helpers fall back to stack buffers of
+     * the same size, so an exhausted heap costs stack space rather
+     * than a failed conversion.
+     */
+    output.p_scratch = stdoc_malloc(STDOC_SCRATCH_SIZE);
+    output.scratch_from_heap = (output.p_scratch != NULL) ? 1 : 0;
+
     p_format = format;
     magnitude = 0;
     negative = 0;
@@ -631,6 +702,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
         {
             if (parse_decimal(&p_format, &spec.width) != 0)
             {
+                output_release_scratch(&output);
                 return -1;
             }
         }
@@ -654,6 +726,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
             {
                 if (parse_decimal(&p_format, &spec.precision) != 0)
                 {
+                    output_release_scratch(&output);
                     return -1;
                 }
             }
@@ -903,6 +976,8 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                 break;
         }
     }
+
+    output_release_scratch(&output);
 
     if (output.failed != 0)
     {

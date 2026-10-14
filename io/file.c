@@ -32,8 +32,8 @@
 /*
  * The standard streams and their staging buffer.
  *
- * Every stream owns a fixed-size buffer embedded in the object, so the
- * library performs no allocation at all.  Bytes are staged there and
+ * Every stream owns a fixed-size buffer embedded in the object, so
+ * staging output performs no allocation.  Bytes are staged there and
  * handed to the operating system in a single write once the buffer is
  * full, once a newline is staged, or when the caller finishes a
  * complete formatted call.  Flushing eagerly on those three events

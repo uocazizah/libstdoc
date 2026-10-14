@@ -1,2 +1,131 @@
 libstdoc news
----------------
+===============
+
+1.0.0-beta
+--------------
+
+Released 14 October 2026.
+
+This entry records everything from the commit "major changes"
+(fbc80cd), which introduced the present implementation, through the
+automation commits that followed (92a8928, dependabot.yml; 79eefdc,
+the CodeQL workflow), up to the state of the tree at this release,
+including the dynamic memory allocator and the documentation.
+
+
+Build and project structure
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  * New CMake build (CMake 3.16 or newer) producing a static archive,
+    with strict warnings (-Wall -Wextra -Wpedantic -Werror) for every
+    file written for this project and ISO C17 with extensions off for
+    the whole tree, tests included.
+  * Freestanding by design: the library is built without a host C
+    library (-ffreestanding -fno-builtin -fno-stack-protector) and the
+    tests link with -nostdlib -static -no-pie, so the library's own
+    entry point, printf and string helpers are the only ones a test
+    program can use.
+  * Platform selection at configure time: Linux on aarch64 is
+    supported, anything else fails with a message that names what is
+    missing instead of silently picking an incompatible
+    implementation.
+  * New directory layout: assembly/ (runtime), io/ (streams,
+    formatting, system calls), mem/ (allocator), include/ (public
+    API), etc/ (package metadata), test/ (tests), docs/
+    (documentation).
+  * Installation of the archive, the headers, a CMake package
+    (find_package(libstdoc)) and a pkg-config file.
+  * Multi-licensing restructured: LICENSE explains the choice and
+    LICENSES/ carries the full texts of GPLv2+, LGPLv2.1+ and
+    Apache-2.0 together with a README on how the choice works.
+  * README rewritten around the new structure.
+
+
+Library
+~~~~~~~
+
+  * stdoc_printf and stdoc_fprintf, backed by a new formatting engine
+    (stdoc_vfprintf): the conversions %d %i %u %o %x %X %c %s %p and
+    %%, the flags '-', '+', ' ', '#' and '0', a numeric or '*' width,
+    a '.' precision (numeric or '*'), and the length modifiers hh, h,
+    l, ll, z, t and j.
+  * The documented failure contract: a width or precision literal
+    that does not fit in an int, a field that would not fit in the
+    return value and a rejected write all fail the call with -1, a
+    failed call discards what it had staged, and a stream error is
+    sticky.
+  * Standard streams: stdoc_stdout is buffered and flushes on a
+    newline and at the end of every completed call, stdoc_stderr is
+    unbuffered so ordering is preserved, stdoc_stdin is reserved for a
+    future input release.
+  * Operating-system layer isolated in io/syscall_linux.c (the only
+    place with system-call numbers), a generic system-call trampoline
+    in assembly/syscall.S and the program entry point in
+    assembly/start_aarch64.S - no constructors and no atexit handling,
+    which is why the formatted functions flush themselves.
+  * Internal stdoc_strlen, stdoc_memcpy and stdoc_memset so the
+    library links with -nostdlib without taking symbols from a host
+    C library.
+  * Public headers: include/libstdoc.h (ISO C17, freestanding-safe)
+    and include/libstdoc.hpp (extern "C" linkage for C++ consumers).
+
+
+Dynamic memory
+~~~~~~~~~~~~~~
+
+  * stdoc_malloc and stdoc_free over a static arena of 4096 bytes that
+    never asks the operating system for memory, so a leak is bounded
+    by the arena size and can be counted.  First-fit allocation with
+    block splitting, and merging of adjacent free blocks on release,
+    so the arena returns to one block when everything is freed.  The
+    size is configurable with -DSTDOC_HEAP_SIZE=<bytes>.
+  * The safe variants: stdoc_malloc_safe checks "count * size" for
+    overflow, zeroes what it returns and terminates the process with a
+    diagnostic on failure; stdoc_free_safe rejects pointers outside
+    the heap, interior pointers, double frees and corrupted headers
+    the same way.  Both exit with status 134.
+  * Accounting of live bytes and live blocks, which the tests assert
+    to be zero after every scenario.
+  * The formatting engine now borrows its digit and padding scratch
+    buffer (97 bytes) from the heap for the duration of a call and
+    falls back to stack buffers when the heap is exhausted, so running
+    out of heap never makes the formatted functions fail.
+
+
+Tests
+~~~~~
+
+  * Nine tests under CTest: golden output for index.c and format.c,
+    the same golden output from C++, the failure paths of the
+    formatted functions, the heap and its leak accounting, and the
+    four fail-fast scenarios of the safe allocator, each of which has
+    to end with the documented fatal status 134.
+  * The golden file of test/format.c was produced by a reference C
+    library, so the comparison checks the dialect and not the
+    implementation's habits.
+
+
+Documentation
+~~~~~~~~~~~~~
+
+  * New docs/ directory documenting the whole repository in plain
+    text: docs/README (the index and reading order), docs/repository
+    (every top-level entry), docs/building, docs/testing,
+    docs/formatting, docs/io and docs/heap.  README points at it.
+
+
+Continuous integration
+~~~~~~~~~~~~~~~~~~~~~~
+
+  * .github/dependabot.yml keeps the GitHub Actions dependencies
+    updated (92a8928), and .github/workflows/codeql.yml runs CodeQL
+    analysis (79eefdc).  Neither file takes part in the build: the
+    project builds with no network access.
+
+
+Version
+~~~~~~~
+
+  * The package version is 1.0.0.  CMake versions carry no suffix, so
+    the beta status of this release is recorded here in NEWS rather
+    than in libstdoc.pc or the CMake package version.

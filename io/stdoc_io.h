@@ -47,10 +47,12 @@
 /*
  * Size of the per-stream staging buffer, in bytes.
  *
- * The buffer lives inside the stream object, so no allocation is ever
- * performed by libstdoc.  256 bytes keeps a whole formatted line in
- * one write system call in the common case without growing the
- * stream object meaningfully.
+ * The buffer lives inside the stream object, so staging output never
+ * allocates: the only heap use in the library is the scratch block
+ * that the formatting engine borrows for one formatted call (see
+ * io/vfprintf.c).  256 bytes keeps a whole formatted line in one
+ * write system call in the common case without growing the stream
+ * object meaningfully.
  */
 #define STDOC_BUFFER_SIZE 256
 

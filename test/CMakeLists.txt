@@ -7,6 +7,7 @@
 
 set(STDOC_START_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../assembly/start_aarch64.S)
 set(STDOC_IO_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../io)
+set(STDOC_MEM_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../mem)
 
 # The two test programs that came with this repository predate the
 # strict warning policy and are built without -Werror: clang rejects a
@@ -63,6 +64,48 @@ target_compile_options(test_errors PRIVATE
 )
 target_link_options(test_errors PRIVATE ${STDOC_LINK_OPTIONS})
 add_test(NAME error_handling COMMAND test_errors)
+
+# heap.c: the allocator, its safe variants and the leak accounting.
+# Every scenario allocates only a few kilobytes, so anything left
+# behind stays that small, and the test fails unless the live byte and
+# block counts are back at zero after each one.
+add_executable(test_heap heap.c ${STDOC_START_SOURCE})
+target_link_libraries(test_heap PRIVATE stdoc)
+target_include_directories(test_heap PRIVATE
+    ${STDOC_IO_SOURCE_DIR}
+    ${STDOC_MEM_SOURCE_DIR}
+)
+target_compile_options(test_heap PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:${STDOC_C_WARNINGS}>
+    $<$<COMPILE_LANGUAGE:C>:${STDOC_TEST_FLAGS}>
+)
+target_link_options(test_heap PRIVATE ${STDOC_LINK_OPTIONS})
+add_test(NAME heap_checks COMMAND test_heap)
+
+# heap_abort.c: the fail-fast paths of the safe functions.  Each
+# scenario has to end with the documented fatal status 134, which
+# CheckFatal.cmake asserts; a scenario that exits cleanly or crashes
+# fails instead of passing unnoticed.
+add_executable(test_heap_abort heap_abort.c ${STDOC_START_SOURCE})
+target_link_libraries(test_heap_abort PRIVATE stdoc)
+target_include_directories(test_heap_abort PRIVATE
+    ${STDOC_IO_SOURCE_DIR}
+    ${STDOC_MEM_SOURCE_DIR}
+)
+target_compile_options(test_heap_abort PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:${STDOC_C_WARNINGS}>
+    $<$<COMPILE_LANGUAGE:C>:${STDOC_TEST_FLAGS}>
+)
+target_link_options(test_heap_abort PRIVATE ${STDOC_LINK_OPTIONS})
+
+foreach(scenario overflow oom double_free invalid_pointer)
+    add_test(NAME heap_abort_${scenario}
+        COMMAND ${CMAKE_COMMAND}
+            -DEXECUTABLE=$<TARGET_FILE:test_heap_abort>
+            -DSCENARIO=${scenario}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckFatal.cmake
+    )
+endforeach()
 
 if(STDOC_HAVE_CXX)
     # The C++ test proves that the header is usable from C++ and that

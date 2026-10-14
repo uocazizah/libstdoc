@@ -14,10 +14,11 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-# The version is that of the library as a package, not a claim about
-# the stability of the interface: the project is pre-1.0 and the
-# interface may still change.
-project(libstdoc VERSION 0.1.0 LANGUAGES C ASM)
+# The version is that of the library as a package.  The beta status of
+# this point in the history - 1.0.0-beta - is recorded in NEWS; CMake
+# versions carry no suffix, and the interface may still change before
+# the 1.0.0 final release.
+project(libstdoc VERSION 1.0.0 LANGUAGES C ASM)
 
 # ISO C17 for every C target in the project, tests included, so that no
 # target is ever compiled against a dialect the library does not
@@ -104,6 +105,19 @@ endif()
 # point belongs to the runtime this library provides.  The test
 # executables still compile it into themselves so that linking a test
 # never depends on the linker recovering a symbol from an archive.
+#
+# mem/heap.c is the dynamic memory allocator: its arena is a static
+# object whose size is fixed here, so a build that wants a different
+# heap sets STDOC_HEAP_SIZE rather than editing a header.
+set(STDOC_HEAP_SIZE "4096" CACHE STRING
+    "size in bytes of the libstdoc heap arena")
+
+if(NOT STDOC_HEAP_SIZE MATCHES "^[0-9]+$")
+    message(FATAL_ERROR
+        "libstdoc: STDOC_HEAP_SIZE \"${STDOC_HEAP_SIZE}\" is not a "
+        "positive number of bytes")
+endif()
+
 add_library(stdoc STATIC
     assembly/start_aarch64.S
     assembly/syscall.S
@@ -113,6 +127,7 @@ add_library(stdoc STATIC
     io/vfprintf.c
     io/printf.c
     io/fprintf.c
+    mem/heap.c
 )
 
 set_target_properties(stdoc PROPERTIES OUTPUT_NAME stdoc)
@@ -127,12 +142,20 @@ target_compile_options(stdoc PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${STDOC_FREESTANDING_FLAGS}>
 )
 
+# The arena size reaches the allocator as a definition rather than as
+# an edit to a header, so the configured value is the only one the
+# library is built with.
+target_compile_definitions(stdoc PRIVATE
+    STDOC_HEAP_SIZE=${STDOC_HEAP_SIZE}
+)
+
 target_include_directories(stdoc
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/io
+        ${CMAKE_CURRENT_SOURCE_DIR}/mem
 )
 
 option(STDOC_BUILD_TESTS "build the libstdoc test programs" ON)

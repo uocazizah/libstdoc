@@ -10,20 +10,30 @@ traditional GNU Library C (glibc).
 Project Status
 -----------------
 
-libstdoc is currently in the beta stage.
+libstdoc is currently in the beta stage: the current release is
+1.0.0-beta (see NEWS).
 
 The library is under active development and is not yet considered stable.
 standard library, library internals, and project structure may change
-frequently until the first public release of v1.0.0.
+frequently until the final 1.0.0 release.
 
 Repository Structure
 -----------------------
 assembly/     Source Code of Assembly
 io/           Source Code of Input Output
+mem/          Source Code of Memory
 etc/          Project configuration files
 include/      Global include file
+docs/         Documentation
 test/         Test with pure C
 build/        manual build directory
+
+Documentation
+----------------------
+
+The docs/ directory documents the whole repository in plain text, in
+the style of this file.  Start with docs/README, which lists every
+document and the reading order for a first-time reader.
 
 License
 ----------------------

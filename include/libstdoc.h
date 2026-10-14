@@ -36,11 +36,13 @@
  * Public interface of libstdoc.
  *
  * The header is written in ISO C17 and is deliberately usable in
- * freestanding builds: it depends only on "<stdarg.h>", which is
- * provided by the compiler rather than by any C library.
+ * freestanding builds: it depends only on "<stdarg.h>" and
+ * "<stddef.h>", which are provided by the compiler rather than by any
+ * C library.
  */
 
 #include <stdarg.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,6 +108,12 @@ extern stdoc_FILE *const stdoc_stdin;
  * Returns the number of characters written, or -1 if the stream
  * could not be written.  On failure the stream keeps a sticky error
  * and later calls fail immediately.
+ *
+ * Each call borrows one small scratch block from the libstdoc heap
+ * for the duration of the call and releases it before returning, so
+ * a completed call leaves nothing allocated.  When the heap is
+ * exhausted the call falls back to an internal stack buffer instead,
+ * so running out of heap never makes the formatted functions fail.
  */
 int stdoc_printf(const char *format, ...);
 
@@ -115,6 +123,69 @@ int stdoc_printf(const char *format, ...);
  * for the meaning of the return value.
  */
 int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...);
+
+/*
+ * Dynamic memory.
+ *
+ * libstdoc allocates from a private static arena whose size is fixed
+ * when the library is compiled; the heap never grows through the
+ * operating system.  A build may set the arena size with
+ * "-DSTDOC_HEAP_SIZE=<bytes>" (4096 by default), which also bounds
+ * the worst case leak: memory that is never released stays inside
+ * that arena and is reported by the library's own accounting rather
+ * than accumulating unnoticed.
+ *
+ * The heap is not thread-safe: libstdoc creates no threads and
+ * provides no synchronisation.
+ */
+
+/*
+ * Allocate "size" bytes and return a pointer suitably aligned for any
+ * object of that size, or null when no block of that size is free.
+ * The memory is not initialised.
+ *
+ * A "size" of 0 allocates nothing and returns a null pointer, which
+ * is not a failure.  Returns null on failure.
+ */
+void *stdoc_malloc(size_t size);
+
+/*
+ * Release a block obtained from stdoc_malloc or stdoc_malloc_safe.
+ *
+ * A null pointer releases nothing.  Anything else that is not the
+ * start of a live block - a pointer from outside the heap, a pointer
+ * into the middle of a block, a block that is already free - is
+ * ignored without modifying the heap.  Use stdoc_free_safe when such
+ * a pointer must be reported instead.
+ */
+void stdoc_free(void *p);
+
+/*
+ * Same as stdoc_malloc, but with the checks a caller should not have
+ * to repeat:
+ *
+ *   - "count * size" is computed with an overflow check, so a request
+ *     whose size wraps around is rejected instead of being truncated;
+ *   - the memory is filled with zero bytes before it is returned.
+ *
+ * A failure to satisfy the request - an overflowing size or an
+ * exhausted heap - writes a diagnostic to stdoc_stderr and terminates
+ * the process with status 134, so this function never returns a null
+ * pointer for a request it could not meet.  The only null result is
+ * the documented "nothing was requested" case ("count" or "size" is
+ * 0), which allocates nothing and is not an error.
+ */
+void *stdoc_malloc_safe(size_t count, size_t size);
+
+/*
+ * Same as stdoc_free, but a pointer that is not the start of a live
+ * block is reported: the function writes a diagnostic naming the
+ * problem (outside the heap, not a block start, double free or a
+ * corrupted header) to stdoc_stderr and terminates the process with
+ * status 134 instead of ignoring it.  A null pointer still releases
+ * nothing and is not an error.
+ */
+void stdoc_free_safe(void *p);
 
 #ifdef __cplusplus
 } /* extern "C" */
