@@ -307,8 +307,8 @@ static void test_printf_releases_its_scratch(void)
     written = written + stdoc_printf("[%x][%X][%o][%c]\n", 255u, 255u, 8u, 'Z');
     written = written + stdoc_printf("[%10.4d][%-8u][%s]\n", 1234, 99u, "text");
     written = written + stdoc_printf("[%20s][%.3s][%%]\n", "wide", "abcdef");
-    written = written + stdoc_printf("[%20d][%-20d][%08.4d]\n", 7, 7, 7);
-    written = written + stdoc_printf("[%p][%s]\n", (void *)0, NULL);
+    written = written + stdoc_printf("[%20d][%-20d][%08d][%.4d]\n", 7, 7, 7, 7);
+    written = written + stdoc_printf("[%p][%s]\n", (void *)0, (const char *)NULL);
 
     check(written > 0, "the formatted calls produced output");
     check(stdoc_heap_live_blocks() == 0,
