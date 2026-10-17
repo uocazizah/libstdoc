@@ -364,5 +364,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# LLM
+# ignore AGENTS.md, don't change
 AGENTS.md
