@@ -13,11 +13,18 @@ Run a subset by name:
 
 
 What is registered today
---------------------------
+-------------------------
 
     index_output          golden output of index.c
     format_output         golden output of format.c
+    differential          format.c's engine against a reference C library,
+                          case by case, at test time
     error_handling        failure paths (self-checking)
+    stream_output         staging, discard and stream order, merged
+                          golden output of stream.c
+    large_write_is_reported
+                          one 200000 byte write, checked for status,
+                          length and bytes on a file and on a pipe
     heap_checks           allocator, safe variants, leak counts
     heap_abort_overflow   safe size overflow terminates with 134
     heap_abort_oom        safe out of memory terminates with 134
@@ -26,10 +33,18 @@ What is registered today
     heap_abort_invalid_pointer
                           safe bad pointer terminates with 134
     index_cxx_output      the same golden output, from C++
+    install_and_consume   the library installs, and a separate project
+                          builds and runs against the installation
+
+The last test builds the whole library a second time, installs it into
+a scratch directory under the build tree and configures a small consumer
+project against that directory; it takes a great deal longer than the
+others and is the only one that touches the filesystem outside the build
+tree's own subdirectories.
 
 
-The three kinds of test
------------------------
+The kinds of test
+-----------------
 
 Golden output
     The program prints, CompareOutput.cmake runs it and requires two
@@ -38,6 +53,26 @@ Golden output
     is still reported, because the status is checked as well.
 
     Used by index_output, format_output and index_cxx_output.
+
+Merged golden output
+    The same, except that both streams are merged into one file before
+    they are compared, so the golden file records where a diagnostic
+    written to stderr lands relative to output written to stdout.
+    CompareMergedOutput.cmake does the redirection and the comparison.
+
+    Used by stream_output.
+
+Reference comparison
+    One source is compiled twice: once linked against libstdoc and once
+    against the host C library, with -DSTDOC_REFERENCE choosing the
+    calls.  CompareTwo.cmake runs both programs and requires them to
+    print the same bytes.  Nothing is stored, so the reference is a live
+    one and cannot drift into being a snapshot of libstdoc.
+
+    Used by differential (test/differential.c).  Its cases are built at
+    run time, so every combination of flags, width and precision is
+    covered - over two thousand cases today - without the file growing
+    with them.
 
 Self-checking
     The program performs its own checks, prints "FAIL: ..." for each
@@ -57,22 +92,53 @@ Fatal paths
 
     Used by the four heap_abort_* tests (test/heap_abort.c).
 
+Write destinations
+    The program performs one large write and CheckLargeWrite.cmake runs
+    it twice, once with standard output on a regular file and once with
+    standard output on a pipe.  Each run has to report success, and the
+    bytes that arrive have to be exactly the bytes the program produced,
+    compared with the pattern the program uses rather than with a golden
+    file of two hundred thousand bytes.
+
+    Used by large_write_is_reported (test/largewrite.c).
+
+Installation
+    InstallTest.cmake configures, builds and installs libstdoc into a
+    scratch prefix, checks that the headers, the archive and the package
+    metadata are where the install rules promised to put them, then
+    configures test/consumer against that prefix with find_package,
+    builds it, runs it and checks what it printed.  When the host has
+    pkg-config, it is asked to describe the package as well.
+
+    Used by install_and_consume.
+
 
 Golden files
 ------------
 
-test/expected-format.txt was produced from test/format.c by a
-reference C library rather than by libstdoc itself, so the comparison
-is a real check and not a snapshot of whatever the implementation
-happens to do.  Regenerate it from the repository root with a hosted
-compiler:
+test/expected-format.txt was produced from test/format.c by a reference
+C library rather than by libstdoc itself, so the comparison is a real
+check and not a snapshot of whatever the implementation happens to do.
+Regenerate it from the repository root with a hosted compiler:
 
     cc -DSTDOC_REFERENCE -w test/format.c -o reference
     ./reference > test/expected-format.txt
 
-test/expected-index.txt matches what index.c prints.  Regenerating a
-golden file changes what the library is held to: review the diff
-before committing it.
+test/expected-index.txt matches what index.c prints.
+
+test/expected-stream.txt is different in kind: it is the merged output
+of test/stream.c run against libstdoc, and it states a property that
+only libstdoc defines - that stdout is flushed when a newline is staged
+while stderr is unbuffered - so a reference C library is the wrong thing
+to generate it from (glibc buffers stdout to a file and would interleave
+the two streams differently).  Regenerate it with the same redirection
+the test uses, checking the merged result before committing it:
+
+    /bin/sh -c './build/test/test_stream > /tmp/merged 2>&1'
+    cat /tmp/merged
+    cp /tmp/merged test/expected-stream.txt
+Regenerating any golden file changes what the library is held to:
+review the diff before committing it.
 
 
 Rules a new test follows
@@ -80,43 +146,73 @@ Rules a new test follows
 
   * Freestanding tests compile assembly/start_aarch64.S into
     themselves, so linking never depends on the linker recovering a
-    symbol from an archive, and link with -nostdlib -static -no-pie.
-  * Every C test uses the full warning policy
-    (-Wall -Wextra -Wpedantic -Werror) with -fno-builtin and
-    -fno-stack-protector, unless it is one of the two legacy programs
-    (index.c, index.cxx) that predate the policy.
+    symbol from an archive, and link with -nostdlib -static.
+  * Every C test uses the warning policy the library is built with,
+    with -fno-builtin and -fno-stack-protector.  Two programs are the
+    documented exception: test/format.c and test/errors.c are built
+    with -Wno-format, because a good part of what they pin down - the
+    '0' flag on a string, a precision on %p, a '+' on an unsigned
+    conversion, an empty format string, a width literal too large for an
+    int - is behaviour this library defines on purpose and "-Wformat"
+    refuses to compile.  The reason is stated again where those cases
+    are, in the files themselves.
   * A test that needs internals includes the internal header of that
     layer (io/stdoc_io.h or mem/stdoc_mem.h) by adding the directory
     to that target only.  errors.c does this on purpose: a stream
     bound to a bad descriptor cannot be obtained through the public
     interface, and its sticky-error behaviour is worth testing.
+    stream.c uses the same header for stdoc_stream_discard, and
+    largewrite.c for stdoc_sys_write.
   * A test that checks a value carries its own verdict (exit status),
     so it needs no golden file.
+  * A program whose output is compared with a golden file writes
+    nothing else to standard output; a note for a reader goes to
+    standard error, which the merge in CompareMergedOutput.cmake places
+    where it belongs and the golden files record.
 
 
 The leak policy of the heap tests
 ---------------------------------
 
-The allocator tests use small allocations only.  The arena is 4096
-bytes by default, so anything a bug loses stays a few kilobytes at
-most, and the accounting in mem/stdoc_mem.h turns any leak into a
-failing check: after every scenario the live byte and block counts
-must be back at zero.  The exhaustion scenario deliberately fills the
-arena to prove that a full heap behaves - stdoc_malloc reports it,
-printf falls back to its stack buffer, and releasing everything
-restores the whole arena.
+The allocator tests use small allocations only, so anything a bug loses
+stays small, and the accounting in mem/stdoc_mem.h turns any leak into a
+failing check: after every scenario the live byte and block counts must
+be back at zero.  The exhaustion scenario deliberately fills the arena
+to prove that a full heap behaves - stdoc_malloc reports it, printf
+falls back to its stack buffer, and releasing everything restores the
+whole arena.
 
-The tests do not depend on the arena size: they fill whatever heap
-the library was built with.  Building with -DSTDOC_HEAP_SIZE=1024 and
-running the same tests is a supported and useful variation.
+The tests do not depend on the arena size: they ask the allocator what
+it has and shape the scenario accordingly, so the same sources run
+against any arena the build accepts.  Building with -DSTDOC_HEAP_SIZE=64
+and running the same tests is a supported and useful variation, and the
+configuration guard rejects anything below 64.
 
 
 What is not tested
 ------------------
 
+  * The retry for a short write in io/syscall_linux.c is not covered by
+    an automated test.  A short write cannot be produced on demand: a
+    blocking write completes the whole transfer before it returns, and
+    the cases that do return early - a terminal whose output has been
+    stopped and interrupted by a signal, a non-blocking descriptor -
+    need signal handling or O_NONBLOCK, neither of which the library has
+    a wrapper for.  large_write_is_reported covers what can be checked
+    (the status, the length and the bytes of a write far larger than the
+    stream buffer, on a file and on a pipe); the retry itself is
+    defensive and is exercised only by inspection.
+  * The count-versus-error boundary of stdoc_kernel_result is covered
+    only through stdoc_sys_write.  stdoc_sys_read has the same
+    classification and no caller yet; when the input layer arrives, its
+    own test has to cover a read of 4096 bytes or more.
   * Sanitizers and valgrind are not run: a "-nostdlib" freestanding
     program has no runtime for them.  Leak detection uses the
     library's own accounting instead.
   * Only the host that builds the project (aarch64 Linux) is
     exercised.  No other operating system or architecture is claimed
     to work without a toolchain and a successful build.
+  * The comparison against a reference C library covers the
+    conversions both implement.  Where they are documented to differ,
+    the difference is pinned by a golden file instead; see
+    docs/formatting.
