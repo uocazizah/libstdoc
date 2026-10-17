@@ -60,6 +60,18 @@ return=23
 return=23
 [(nil)]
 return=8
+[+0x1234]
+return=10
+[ 0x1234]
+return=10
+[                         +0x1234]
+return=35
+[+0x1234                         ]
+return=35
+[(nil)]
+return=8
+[(nil)]
+return=8
 [+42]
 return=6
 [ 42]
