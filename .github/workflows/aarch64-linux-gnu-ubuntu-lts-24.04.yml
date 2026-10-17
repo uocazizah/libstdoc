@@ -1,17 +1,21 @@
-# libstdoc - build, test and verify on every change
+# libstdoc - build, test and verify on the target the library implements
 #
-# The only target this library implements is Linux on aarch64, so the
-# job runs on an aarch64 runner and never cross-compiles: what the
-# runner builds is what the library claims to support.
+# The only target this library implements is Linux on aarch64, so this
+# is the workflow that builds it natively: the runner is an aarch64
+# machine and what it builds is what the library claims to support.
+# The companion workflow for an x86_64 host
+# (x86_64-linux-gnu-ubuntu-lts-24.04.yml) cross-compiles the same
+# sources and runs the same suite under emulation, because a build of
+# this library for x86_64 does not exist to test.
 #
-# Three things are checked.  The build and the test suite run under both
-# compilers and at the arena sizes that matter at the boundary.  The
-# golden file of the conversion suite is regenerated from a reference C
-# library and compared, so it can never drift into being a snapshot of
-# whatever libstdoc itself now prints.  The configuration guard is
-# checked to reject the arena sizes it documents as impossible.
+# Three things are checked here.  The build and the test suite run under
+# both compilers and at the arena sizes that matter at the boundary.
+# The golden file of the conversion suite is regenerated from a
+# reference C library and compared, so it can never drift into being a
+# snapshot of whatever libstdoc itself now prints.  The configuration
+# guard is checked to reject the arena sizes it documents as impossible.
 
-name: build and test
+name: build and test - native aarch64
 
 on:
   push:
