@@ -1,11 +1,17 @@
 libstdoc
 -----------
 
-libstdoc is library for C Programming language.
+libstdoc is a library for the C programming language.
 
-libstdoc aims to be fast, customizable, safe.
-while maintaining performance and control close to
-traditional GNU Library C (glibc).
+libstdoc aims to be fast, customizable and safe, while maintaining
+performance and control close to the traditional GNU C library
+(glibc).
+
+It is freestanding: it supplies its own entry point, its own formatted
+output and its own allocator, and links without a C runtime.  The target
+is Linux on aarch64; any other operating system or architecture is
+rejected when the project is configured, rather than silently mapped
+onto an implementation that does not match it.
 
 Project Status
 -----------------
