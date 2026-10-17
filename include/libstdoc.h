@@ -44,6 +44,31 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+/*
+ * Compile-time format checking.
+ *
+ * When the compiler understands the GNU attribute, stdoc_printf and
+ * stdoc_fprintf are checked against the arguments they are given, so a
+ * mismatch is reported while the program is built instead of when it
+ * runs.  The attribute is the only compiler extension in this header:
+ * it changes no declaration and no calling convention, it is provided
+ * by both GNU C and Clang, and it expands to nothing anywhere else, so
+ * the header still compiles as ISO C17.
+ *
+ * The check is stricter than this interface in one place.  "%+p" and
+ * "% p" are accepted by the functions, which follow the reference C
+ * library and print "+0x1234" and " 0x1234", but "-Wformat" reports
+ * the '+' and ' ' flags on a pointer conversion.  A caller that wants
+ * that output can quiet the one diagnostic around the one call that
+ * uses it.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define STDOC_PRINTF_FORMAT(_format_position, _first_argument) \
+    __attribute__((format(printf, _format_position, _first_argument)))
+#else
+#define STDOC_PRINTF_FORMAT(_format_position, _first_argument)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -95,6 +120,13 @@ extern stdoc_FILE *const stdoc_stdin;
  * or '*' width; a '.' precision (numeric or '*'); and the length
  * modifiers 'hh', 'h', 'l', 'll', 'z', 't' and 'j'.
  *
+ * The '+' and ' ' flags apply to the signed conversions and to %p.
+ * For a non-null pointer they are printed in front of the "0x" prefix
+ * - "%+p" prints "+0x1234" and "% p" prints " 0x1234" - which is what
+ * the reference C library does.  A null pointer prints as "(nil)",
+ * with no sign.  For the unsigned conversions the two flags are
+ * ignored.
+ *
  * A width given as a negative '*' argument is treated as the '-'
  * flag with a positive width.  A precision given as a negative '*'
  * argument is treated as if no precision were given.  A null "s"
@@ -115,14 +147,15 @@ extern stdoc_FILE *const stdoc_stdin;
  * exhausted the call falls back to an internal stack buffer instead,
  * so running out of heap never makes the formatted functions fail.
  */
-int stdoc_printf(const char *format, ...);
+int stdoc_printf(const char *format, ...) STDOC_PRINTF_FORMAT(1, 2);
 
 /*
  * Same as stdoc_printf, but writes to "stream" instead of
  * stdoc_stdout.  See stdoc_printf for the supported conversions and
  * for the meaning of the return value.
  */
-int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...);
+int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
+    STDOC_PRINTF_FORMAT(2, 3);
 
 /*
  * Dynamic memory.
@@ -186,6 +219,13 @@ void *stdoc_malloc_safe(size_t count, size_t size);
  * nothing and is not an error.
  */
 void stdoc_free_safe(void *p);
+
+/*
+ * The format-checking macro is an internal detail of the two
+ * declarations above; it is undefined here so that the public
+ * namespace keeps only the documented names.
+ */
+#undef STDOC_PRINTF_FORMAT
 
 #ifdef __cplusplus
 } /* extern "C" */
