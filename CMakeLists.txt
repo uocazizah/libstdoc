@@ -53,7 +53,35 @@ endif()
 # has been identified, never assumed to exist.
 if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     # Strict warnings for the library and the tests alike.
-    set(STDOC_C_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+    #
+    # The baseline below every build gets: the usual -Wall -Wextra
+    # -Wpedantic set, and then the warnings that matter most for a
+    # library that hands raw memory and formatted output to its
+    # callers.  -Wconversion and -Wsign-conversion catch a narrowing
+    # that would silently truncate a size; -Wshadow and -Wcast-qual
+    # catch a name or a cast that hides a mistake; -Wstrict-prototypes
+    # and -Wmissing-prototypes keep the internal functions declared the
+    # way the project declares them; -Wswitch-default, -Wundef,
+    # -Wdouble-promotion and -Wvla cover the remaining slips that a
+    # freestanding build cannot afford.
+    #
+    # Every flag here is understood by both GNU C and Clang, so the
+    # same set can be used for either without a check.
+    set(STDOC_C_WARNINGS
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+        -Wconversion
+        -Wsign-conversion
+        -Wshadow
+        -Wstrict-prototypes
+        -Wmissing-prototypes
+        -Wcast-qual
+        -Wundef
+        -Wswitch-default
+        -Wdouble-promotion
+        -Wvla)
 
     # The library is compiled as freestanding code: it may not assume a
     # host C library, may not use compiler builtins in place of its own
@@ -77,7 +105,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     # Linking the tests with no startup files and no libraries is what
     # makes the library's own _start and string helpers the only ones
     # available, which is the point of the whole exercise.
-    set(STDOC_LINK_OPTIONS -nostdlib -static -no-pie)
+    #
+    # -static is what keeps the result a plain non-PIE executable: both
+    # the GNU and the Clang driver already imply -no-pie for a static
+    # link, and passing -no-pie as well would only make Clang report it
+    # as an unused argument on every link.
+    set(STDOC_LINK_OPTIONS -nostdlib -static)
 else()
     message(FATAL_ERROR
         "libstdoc: compiler \"${CMAKE_C_COMPILER_ID}\" is not supported; "
