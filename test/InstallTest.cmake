@@ -5,6 +5,7 @@
 #     cmake -DLIBSTDOC_SOURCE_DIR=<source> -DCONSUMER_SOURCE_DIR=<source>
 #           -DWORKING_DIR=<scratch> -DLIBDIR=<libdir>
 #           -DC_COMPILER=<cc> -DCXX_COMPILER=<cxx> -DHEAP_SIZE=<bytes>
+#           [-DSYSTEM_NAME=<name> -DSYSTEM_PROCESSOR=<processor>]
 #           -P InstallTest.cmake
 #
 # Everything happens under WORKING_DIR, which is thrown away and
@@ -63,6 +64,25 @@ set(configure_lib
     "-DSTDOC_HEAP_SIZE=${HEAP_SIZE}"
 )
 
+# A cross build fixes the target operating system and processor on its
+# own configure line, because the host it runs on is not the target and
+# the architecture guard would otherwise refuse the nested configure.
+# The values are only passed on when the outer build supplied them; a
+# native build lets the nested configure detect the host, which is the
+# same target the outer one used.  The consumer is a program for the
+# same target, so it is told the same thing.
+set(cross_args)
+
+if(DEFINED SYSTEM_NAME AND NOT SYSTEM_NAME STREQUAL "")
+    list(APPEND cross_args "-DCMAKE_SYSTEM_NAME=${SYSTEM_NAME}")
+endif()
+
+if(DEFINED SYSTEM_PROCESSOR AND NOT SYSTEM_PROCESSOR STREQUAL "")
+    list(APPEND cross_args "-DCMAKE_SYSTEM_PROCESSOR=${SYSTEM_PROCESSOR}")
+endif()
+
+list(APPEND configure_lib ${cross_args})
+
 # A build machine without a C++ compiler is a supported configuration of
 # this project, so the nested build is only told about one when there is
 # one; passing an empty compiler would be worse than not passing it.
@@ -104,6 +124,7 @@ run_or_fail(
     -B "${app_build}"
     "-DCMAKE_PREFIX_PATH=${prefix}"
     "-DCMAKE_C_COMPILER=${C_COMPILER}"
+    ${cross_args}
 )
 
 run_or_fail("${CMAKE_COMMAND}" --build "${app_build}")

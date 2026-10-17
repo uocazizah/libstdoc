@@ -305,7 +305,7 @@ static int stdoc_heap_release(void *p)
     }
 
     address = (uintptr_t)p;
-    base = (uintptr_t)(void *)stdoc_heap_arena;
+    base = (uintptr_t)stdoc_heap_arena;
 
     /*
      * The range check is done on addresses before any pointer

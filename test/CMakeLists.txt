@@ -209,6 +209,19 @@ if(CMAKE_CXX_COMPILER)
     list(APPEND STDOC_INSTALL_TEST_ARGS -DCXX_COMPILER=${CMAKE_CXX_COMPILER})
 endif()
 
+# A cross build fixes the target name and processor on its own configure
+# line, so the architecture guard never consults the host.  The nested
+# configure the install test runs would otherwise detect the host and be
+# refused; the same two values are passed down so it describes the same
+# target the outer build does.  A native build needs neither: it detects
+# the host architecture, which the guard accepts.
+if(CMAKE_CROSSCOMPILING)
+    list(APPEND STDOC_INSTALL_TEST_ARGS
+        -DSYSTEM_NAME=${CMAKE_SYSTEM_NAME}
+        -DSYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}
+    )
+endif()
+
 add_test(NAME install_and_consume
     COMMAND ${CMAKE_COMMAND} ${STDOC_INSTALL_TEST_ARGS}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/InstallTest.cmake
