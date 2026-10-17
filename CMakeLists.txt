@@ -115,7 +115,20 @@ set(STDOC_HEAP_SIZE "4096" CACHE STRING
 if(NOT STDOC_HEAP_SIZE MATCHES "^[0-9]+$")
     message(FATAL_ERROR
         "libstdoc: STDOC_HEAP_SIZE \"${STDOC_HEAP_SIZE}\" is not a "
-        "positive number of bytes")
+        "whole number of bytes")
+endif()
+
+# The arena has to be able to hold one block, which on this target is
+# four alignment units of 16 bytes.  The authoritative check is the
+# static assertion in mem/heap.c, which knows the alignment of the
+# actual target; rejecting the values that can never compile here means
+# such a build is never started, and the message names what is wrong
+# instead of leaving three compiler errors to explain it.
+if(STDOC_HEAP_SIZE LESS 64)
+    message(FATAL_ERROR
+        "libstdoc: STDOC_HEAP_SIZE \"${STDOC_HEAP_SIZE}\" is smaller "
+        "than the smallest arena libstdoc can build with (64 bytes); "
+        "the arena must hold at least one heap block")
 endif()
 
 add_library(stdoc STATIC
