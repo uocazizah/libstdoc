@@ -50,7 +50,9 @@
  *
  * stderr is marked unbuffered so that it is never reordered with
  * respect to stdout: every write is pushed to the kernel as soon as it
- * is staged.  stdout and stdin keep a staging buffer.
+ * is staged.  stdout keeps a staging buffer.  stdin is marked
+ * unbuffered as well, for the opposite reason: nothing writes to it,
+ * so a buffer it could never flush would be dead space in the object.
  */
 static stdoc_FILE stdoc_stream_stdin =
 {
@@ -129,14 +131,20 @@ void stdoc_stream_discard(stdoc_FILE *stream)
  * Stage bytes into the stream buffer, flushing whenever it fills or a
  * newline is queued.  Returns 0 on success, -1 on failure.
  *
- * The loop is written so that a payload larger than the buffer is
- * handled by repeated flushes rather than by an oversized stack copy.
+ * The bytes are copied in blocks rather than one at a time: the free
+ * space in the buffer is filled in one go, and only the part that was
+ * copied is looked at for the newline that has to trigger a flush.  A
+ * payload larger than the buffer is handled by repeated flushes rather
+ * than by an oversized stack copy.
  */
 int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
 {
     const unsigned char *p_bytes;
-    size_t index;
-    size_t available;
+    size_t               remaining;
+    size_t               available;
+    size_t               taken;
+    size_t               index;
+    int                  newline;
 
     if (stream == NULL)
     {
@@ -155,8 +163,9 @@ int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
     }
 
     p_bytes = (const unsigned char *)p_buffer;
+    remaining = length;
 
-    for (index = 0; index < length; index = index + 1)
+    while (remaining > 0)
     {
         available = STDOC_BUFFER_SIZE - stream->length;
 
@@ -166,13 +175,34 @@ int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
             {
                 return -1;
             }
+
             available = STDOC_BUFFER_SIZE;
         }
 
-        stream->buffer[stream->length] = p_bytes[index];
-        stream->length = stream->length + 1;
+        taken = (remaining < available) ? remaining : available;
 
-        if (p_bytes[index] == '\n')
+        (void)stdoc_memcpy(&stream->buffer[stream->length], p_bytes, taken);
+        stream->length = stream->length + taken;
+
+        /*
+         * Only the bytes that have just been staged can hold a newline
+         * that has not been flushed yet: one staged earlier went out
+         * with the write that carried it.
+         */
+        newline = 0;
+        for (index = 0; index < taken; index = index + 1)
+        {
+            if (p_bytes[index] == '\n')
+            {
+                newline = 1;
+                break;
+            }
+        }
+
+        p_bytes = p_bytes + taken;
+        remaining = remaining - taken;
+
+        if (newline != 0)
         {
             if (stdoc_stream_flush(stream) != 0)
             {
