@@ -63,22 +63,33 @@
 #define STDOC_SYS_EXIT_GROUP 94L
 
 /*
- * Largest magnitude a kernel error can have.  The kernel returns
- * "-errno" in the range -4095 .. -1 on failure and a non-negative
- * value on success, so a single unsigned comparison classifies both.
+ * Lowest value the kernel uses to report a failure.
+ *
+ * A failure comes back as "-errno" with errno in the range 1 .. 4095,
+ * so every failure is at least -4095.  Read as an unsigned value that
+ * is the very top of the range, above every count a successful call
+ * can return - counts are not bounded by 4095, and a write of a whole
+ * buffer is one number as ordinary as a write of four bytes - which
+ * is what lets a single comparison classify both.
  */
-#define STDOC_KERNEL_ERROR_LIMIT 4096L
+#define STDOC_KERNEL_ERROR_FLOOR (-4095L)
 
 /*
  * Translate a raw kernel result into the 0 / -1 convention, optionally
  * reporting what the kernel did.
  *
- * The kernel reports an error as "-errno" in the range -4095 .. -1 and
- * a count of what it completed otherwise, so a single unsigned
- * comparison tells the two apart.  The count is stored in "*p_count"
- * when that is not null; the comparison is done on the unsigned
- * representation so that it is well defined for every long value,
- * including negative ones.
+ * The kernel reports a failure as "-errno" in the range -4095 .. -1 and
+ * a count of what it completed otherwise.  Comparing the raw value as
+ * an unsigned integer against -4095 separates the two in one step: a
+ * failure lands in the top 4095 values of the unsigned range, while
+ * every count - however large - stays below that.  Comparing against
+ * the magnitude of the error instead would read any count of 4096 or
+ * more as a failure, which is a whole buffer's worth of output
+ * reported as lost.
+ *
+ * The count is stored in "*p_count" when that is not null.  The
+ * comparison is done on the unsigned representation so that it is well
+ * defined for every long value, including negative ones.
  */
 static int stdoc_kernel_result(long result, size_t *p_count)
 {
@@ -86,7 +97,7 @@ static int stdoc_kernel_result(long result, size_t *p_count)
 
     magnitude = (unsigned long)result;
 
-    if (magnitude >= (unsigned long)STDOC_KERNEL_ERROR_LIMIT)
+    if (magnitude >= (unsigned long)STDOC_KERNEL_ERROR_FLOOR)
     {
         return -1;
     }
@@ -103,12 +114,14 @@ static int stdoc_kernel_result(long result, size_t *p_count)
  * Write "length" bytes, repeating the system call for whatever the
  * kernel did not take.
  *
- * A partial write is ordinary behaviour on a pipe, a terminal or any
- * descriptor that runs out of room, so handing the buffer over once
- * and reporting success would silently drop the rest of it.  A result
- * of zero for a request that was not zero is treated as a failure
- * instead of being retried: it would otherwise repeat forever without
- * the write ever making progress.
+ * A blocking write completes the whole transfer before it returns, but a
+ * short count is a normal result for a terminal whose output has been
+ * stopped and interrupted, for a non-blocking descriptor, and for
+ * anything else that runs out of room mid-transfer, so handing the
+ * buffer over once and reporting success would silently drop the rest
+ * of it.  A result of zero for a request that was not zero is treated
+ * as a failure instead of being retried: it would otherwise repeat
+ * forever without the write ever making progress.
  */
 int stdoc_sys_write(int fd, const void *p_buffer, size_t length)
 {
