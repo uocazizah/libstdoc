@@ -140,7 +140,6 @@ static void test_blocks_do_not_overlap(void)
     int            intact;
 
     payload = 32;
-    count = 0;
 
     for (;;)
     {
