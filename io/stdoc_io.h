@@ -83,8 +83,10 @@ struct stdoc_FILE
  * the only place that knows the system-call numbers and the argument
  * convention of the target, so the formatting engine stays portable.
  *
- * stdoc_sys_write repeats the system call until the kernel has taken * every byte, so a short write - which a pipe or a terminal produces * as a matter of course - is never reported as a success that lost
- * part of the buffer.
+ * stdoc_sys_write repeats the system call until the kernel has taken
+ * every byte, so a short write - which a non-blocking descriptor, or a
+ * terminal whose output was stopped and interrupted, produces - is
+ * never reported as a success that lost part of the buffer.
  *
  * stdoc_sys_read and stdoc_sys_close belong to the platform layer of
  * the input release that stdoc_stdin is waiting for; nothing in the
