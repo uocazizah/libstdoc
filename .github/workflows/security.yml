@@ -1,0 +1,104 @@
+# libstdoc - linter and security audit
+#
+# Two tools that read the sources instead of running them, on every
+# change.  Neither is a proof of anything, and neither is a substitute
+# for the test suite; both are cheap, and a change that trips them is
+# worth a second look before it is merged.
+#
+# clang-tidy
+# ----------
+#
+# The static analyser plus the linter checks around it.  The sources are
+# given the include directories the build gives them and are parsed for
+# the host, which is enough here: the C code is portable and says
+# nothing about the architecture - that lives in the assembly files this
+# job does not read - so a check that would only make sense for one
+# target has nothing to find either way.
+#
+# Three checks are switched off, each for a reason of its own:
+#
+#   bugprone-easily-swappable-parameters
+#       Fires on any two adjacent parameters of convertible type, and
+#       this library is full of functions that take a buffer and a
+#       length or a value and a width.  The check cannot tell a swapped
+#       call from a correct one, so leaving it on would only teach the
+#       reader to skim the output.
+#
+#   bugprone-branch-clone
+#       The length-modifier switches in io/vfprintf.c fetch the same
+#       width through different casts on purpose - long for %ld, long
+#       long for %lld, intmax_t for %jd, size_t for %zu - so their
+#       bodies are meant to look alike.
+#
+#   performance-no-int-to-ptr
+#       The failure-path tests turn small integers into pointers to
+#       hand the allocator an address that is inside the arena but not
+#       the start of a block, which is the only way to reach those
+#       paths.  The library itself never casts an integer to a pointer.
+#
+# "-Wno-format" is passed for the same reason the build passes it to the
+# conversion suite: those tests pin down conversions that a compiler
+# refuses, so the diagnostic has to be off for them.  The check is
+# doubled by the attribute on the public declarations, which stays on
+# everywhere else; see test/CMakeLists.txt.
+#
+# flawfinder
+# ----------
+#
+# A lexical scan for the dangerous-function patterns the C library made
+# famous.  This library implements several of those functions, so the
+# scan is first asked to leave out the hits that are false positives by
+# construction - a name in a "#define" clause, a declaration of a
+# character array - and then to fail on anything still rated level four
+# or above, which is the level at which it means "this is a buffer
+# overflow waiting to happen".  Whatever is left below that is printed
+# for the reader rather than hidden.
+
+name: linter and security audit
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    name: clang-tidy and flawfinder
+    # Neither tool needs the target architecture, an emulator or a
+    # build, so this job runs on the ordinary x86_64 runner.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+              clang-tidy flawfinder
+
+      # Every C file in the tree, the tests included: a test that
+      # mishandles a buffer is as much a defect as the library doing it.
+      # "--warnings-as-errors" is what turns a finding into a failure;
+      # without it clang-tidy reports and exits zero.
+      - name: Analyse the sources with clang-tidy
+        run: |
+          files=$(git ls-files '*.c')
+          clang-tidy \
+              --checks='clang-analyzer-*,bugprone-*,cert-*,performance-*,portability-*,-bugprone-easily-swappable-parameters,-bugprone-branch-clone,-performance-no-int-to-ptr' \
+              --warnings-as-errors='*' $files -- \
+              -std=c17 -Iinclude -Iio -Imem -Wno-format
+
+      - name: Scan the sources with flawfinder
+        run: |
+          flawfinder --minlevel=1 --falsepositive --error-level=4 \
+              --quiet io mem include assembly test
