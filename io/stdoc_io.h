@@ -82,6 +82,14 @@ struct stdoc_FILE
  * convention documented for the public functions.  The wrappers are
  * the only place that knows the system-call numbers and the argument
  * convention of the target, so the formatting engine stays portable.
+ *
+ * stdoc_sys_write repeats the system call until the kernel has taken * every byte, so a short write - which a pipe or a terminal produces * as a matter of course - is never reported as a success that lost
+ * part of the buffer.
+ *
+ * stdoc_sys_read and stdoc_sys_close belong to the platform layer of
+ * the input release that stdoc_stdin is waiting for; nothing in the
+ * library calls them yet.  They are kept next to the write wrapper so
+ * that the whole operating-system surface stays in one file.
  */
 int stdoc_sys_write(int fd, const void *p_buffer, size_t length);
 int stdoc_sys_read(int fd, void *p_buffer, size_t length);
