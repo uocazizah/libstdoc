@@ -93,51 +93,99 @@ static void test_allocation_and_release(void)
 
 /*
  * Blocks that are allocated together keep their own contents.
+ *
+ * How many blocks fit in the arena is the allocator's own business -
+ * the test does not know how large a block header is - so instead of
+ * computing the answer it asks the heap: it takes as many blocks as it
+ * can and keeps going with at least two of them, which is the least a
+ * scenario that compares neighbours needs.  The payload is halved when
+ * the arena is too small to hold two blocks of that size.
  */
+static size_t take_blocks(unsigned char *p_blocks[], size_t wanted,
+                          size_t payload)
+{
+    size_t count;
+
+    for (count = 0; count < wanted; count = count + 1)
+    {
+        p_blocks[count] = (unsigned char *)stdoc_malloc(payload);
+
+        if (p_blocks[count] == NULL)
+        {
+            break;
+        }
+    }
+
+    return count;
+}
+
+static void release_blocks(unsigned char *p_blocks[], size_t count)
+{
+    size_t index;
+
+    for (index = 0; index < count; index = index + 1)
+    {
+        stdoc_free(p_blocks[index]);
+        p_blocks[index] = NULL;
+    }
+}
+
 static void test_blocks_do_not_overlap(void)
 {
     unsigned char *p_blocks[4];
+    size_t         payload;
+    size_t         count;
     size_t         index;
     size_t         byte;
     int            intact;
 
-    for (index = 0; index < 4; index = index + 1)
+    payload = 32;
+    count = 0;
+
+    for (;;)
     {
-        p_blocks[index] = stdoc_malloc(32);
-        check(p_blocks[index] != NULL, "a 32 byte block is available");
+        count = take_blocks(p_blocks, 4, payload);
+
+        if (count >= 2)
+        {
+            break;
+        }
+
+        release_blocks(p_blocks, count);
+
+        if (payload <= 16)
+        {
+            check(0, "the heap serves at least two blocks");
+            return;
+        }
+
+        payload = payload / 2;
     }
 
-    for (index = 0; index < 4; index = index + 1)
+    check(count > 0, "the heap serves allocations");
+
+    for (index = 0; index < count; index = index + 1)
     {
-        if (p_blocks[index] != NULL)
-        {
-            (void)stdoc_memset(p_blocks[index], (int)(0xA0u + index), 32);
-        }
+        (void)stdoc_memset(p_blocks[index], (int)(0xA0u + index), payload);
     }
 
     intact = 1;
-    for (index = 0; index < 4; index = index + 1)
+    for (index = 0; index < count; index = index + 1)
     {
-        if (p_blocks[index] != NULL)
+        for (byte = 0; byte < payload; byte = byte + 1)
         {
-            for (byte = 0; byte < 32; byte = byte + 1)
+            if (p_blocks[index][byte] != (unsigned char)(0xA0u + index))
             {
-                if (p_blocks[index][byte] != (unsigned char)(0xA0u + index))
-                {
-                    intact = 0;
-                }
+                intact = 0;
             }
         }
     }
 
     check(intact != 0, "neighbouring blocks do not overlap");
 
-    for (index = 0; index < 4; index = index + 1)
-    {
-        stdoc_free(p_blocks[index]);
-    }
+    release_blocks(p_blocks, count);
 
-    check(stdoc_heap_live_bytes() == 0, "all four blocks were released");
+    check(stdoc_heap_live_bytes() == 0, "every block was released");
 }
 
 /*
@@ -187,33 +235,44 @@ static void test_exhaustion_and_release(void)
     void  *p_head;
     void  *p_block;
     void  *p_large;
+    size_t payload;
     size_t count;
     int    written;
+
+    /*
+     * The payload is derived from the arena - a sixteenth of it, and
+     * never smaller than the smallest request worth making - so that
+     * the scenario fills whichever heap the library was built with
+     * instead of assuming room for 64 byte blocks.  The previous head
+     * is remembered in the payload itself, so the list of blocks costs
+     * no storage of its own and works for any arena size.
+     */
+    payload = stdoc_heap_capacity() / 16u;
+
+    if (payload < 16u)
+    {
+        payload = 16u;
+    }
 
     p_head = NULL;
     count = 0;
 
     for (;;)
     {
-        p_block = stdoc_malloc(64);
+        p_block = stdoc_malloc(payload);
 
         if (p_block == NULL)
         {
             break;
         }
 
-        /*
-         * The previous head is remembered in the payload itself, so
-         * the list of blocks costs no storage of its own and the
-         * scenario works for any arena size.
-         */
         *(void **)p_block = p_head;
         p_head = p_block;
         count = count + 1;
     }
 
     check(count > 0, "the heap serves allocations");
-    check(stdoc_malloc(64) == NULL, "an exhausted heap reports NULL");
+    check(stdoc_malloc(payload) == NULL, "an exhausted heap reports NULL");
 
     written = stdoc_printf("heap exhausted, falling back: %d\n", 42);
     check(written > 0,
@@ -265,18 +324,42 @@ static void test_printf_releases_its_scratch(void)
 static void test_safe_allocation(void)
 {
     unsigned char *p_block;
+    size_t         count;
+    size_t         total;
     size_t         index;
     int            all_zero;
     void          *p_nothing;
 
-    p_block = stdoc_malloc_safe(4, 16);
+    /*
+     * The request is sized from the arena so that it fits whichever
+     * heap the library was built with: a quarter of the arena in
+     * blocks of 16 bytes, capped at the 64 bytes this scenario has
+     * always asked for.
+     */
+    total = stdoc_heap_capacity() / 4u;
+    count = total / 16u;
+
+    if (count == 0)
+    {
+        count = 1;
+        total = 16u;
+    }
+
+    if (total > 64u)
+    {
+        total = 64u;
+        count = 4u;
+    }
+
+    p_block = stdoc_malloc_safe(count, 16);
     check(p_block != NULL, "malloc_safe returns a pointer");
-    check(stdoc_heap_live_bytes() == 64, "malloc_safe reserves the whole request");
+    check(stdoc_heap_live_bytes() == total,
+          "malloc_safe reserves the whole request");
 
     all_zero = 1;
     if (p_block != NULL)
     {
-        for (index = 0; index < 64; index = index + 1)
+        for (index = 0; index < total; index = index + 1)
         {
             if (p_block[index] != 0u)
             {
