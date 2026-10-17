@@ -74,14 +74,45 @@ Details that are easy to get wrong and are covered by the tests:
     the '0' flag is merged with the precision zeros and placed after
     the sign, which is what makes "%-8.4d" and "%08.4d" differ only in
     alignment.
-  * The '%' and '0' flags are ignored for the signed conversions they
-    do not apply to; "%+u" prints the value unchanged.
+  * The '+' and ' ' flags apply to the signed conversions and to %p.
+    On a non-null pointer they are printed before the "0x" prefix -
+    "%+p" of 0x1234 prints "+0x1234" - which is what the reference C
+    library does; a null pointer prints "(nil)" with no sign.
+  * Flags that do not apply to a conversion are ignored: "%+u" and
+    "% u" print the value unchanged, and "%#u" prints no prefix.
 
 Not supported in this release: floating-point conversions, positional
 arguments ("%1$s"), the "%n" conversion and the "I" / "'" flags.  An
 unrecognised conversion consumes its argument and emits nothing, which
 is undefined behaviour by the standard; emitting nothing is the least
 surprising choice here.
+
+
+Checking the format string
+--------------------------
+
+stdoc_printf and stdoc_fprintf are declared with the GNU
+"format(printf)" attribute when the compiler understands it, so a call
+whose arguments do not match its format string is reported while the
+program is built rather than when it runs.  The attribute is the only
+compiler extension in the public header: it changes no declaration and
+no calling convention, both GNU C and Clang provide it, and it expands
+to nothing anywhere else, so the header is still ISO C17.
+
+The check is the compiler's and it is a little stricter than this
+interface in one place.  "%+p" and "% p" are accepted here, following
+the reference C library, but "-Wformat" reports the '+' and ' ' flags on
+a pointer conversion, because the C standard leaves them undefined
+there.  A caller that wants that output, knowing what it prints, can
+quiet the one diagnostic around the one call:
+
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wformat"
+    stdoc_printf("%+p\n", pointer);
+    #pragma GCC diagnostic pop
+
+test/format.c does exactly that around the cases that pin the sign flags
+on a pointer down.
 
 
 Refusing to produce output
@@ -133,6 +164,14 @@ field and length modifier together with the value each call reports.
 Its golden file was produced by a reference C library, so the test
 checks the dialect rather than the implementation's habits.  See
 docs/testing for how to regenerate it.
+
+test/differential.c covers the same dialect more widely and against a
+live reference: the same source is compiled once against the host C
+library and once against libstdoc, and the two are compared case by
+case.  Its cases are built at run time from every combination of flags,
+width and precision, so it reaches combinations nobody would write by
+hand - a precision on %c, the '#' flag on %d - which is where two
+implementations are most likely to disagree.
 
 test/errors.c covers the failure paths of this document, and
 test/heap.c covers the scratch memory accounting.
