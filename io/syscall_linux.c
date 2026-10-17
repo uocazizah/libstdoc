@@ -35,7 +35,9 @@
  * This file is the only place where Linux system-call numbers and the
  * "-errno in the return register" convention appear.  Everything above
  * it works in terms of 0 / -1 results, so the rest of the library does
- * not depend on the operating system.
+ * not depend on the operating system.  A write is retried for whatever
+ * the kernel did not take, so a short write reaches the layer above as
+ * a success that really did write everything it was given.
  *
  * Target: Linux on aarch64 (the generic Linux system-call ABI, where
  * the number is carried in x8, arguments in x0..x5 and the result in
@@ -68,12 +70,17 @@
 #define STDOC_KERNEL_ERROR_LIMIT 4096L
 
 /*
- * Translate a raw kernel result into the 0 / -1 convention.
+ * Translate a raw kernel result into the 0 / -1 convention, optionally
+ * reporting what the kernel did.
  *
- * The comparison is done on the unsigned representation so that it is
- * well defined for every long value, including negative ones.
+ * The kernel reports an error as "-errno" in the range -4095 .. -1 and
+ * a count of what it completed otherwise, so a single unsigned
+ * comparison tells the two apart.  The count is stored in "*p_count"
+ * when that is not null; the comparison is done on the unsigned
+ * representation so that it is well defined for every long value,
+ * including negative ones.
  */
-static int stdoc_kernel_result(long result)
+static int stdoc_kernel_result(long result, size_t *p_count)
 {
     unsigned long magnitude;
 
@@ -84,25 +91,83 @@ static int stdoc_kernel_result(long result)
         return -1;
     }
 
+    if (p_count != NULL)
+    {
+        *p_count = (size_t)result;
+    }
+
     return 0;
 }
 
+/*
+ * Write "length" bytes, repeating the system call for whatever the
+ * kernel did not take.
+ *
+ * A partial write is ordinary behaviour on a pipe, a terminal or any
+ * descriptor that runs out of room, so handing the buffer over once
+ * and reporting success would silently drop the rest of it.  A result
+ * of zero for a request that was not zero is treated as a failure
+ * instead of being retried: it would otherwise repeat forever without
+ * the write ever making progress.
+ */
 int stdoc_sys_write(int fd, const void *p_buffer, size_t length)
 {
-    long result;
+    const unsigned char *p_bytes;
+    size_t               offset;
+    size_t               remaining;
 
     if ((p_buffer == NULL) && (length != 0))
     {
         return -1;
     }
 
-    result = stdoc_syscall(STDOC_SYS_WRITE, (long)fd,
-                           (long)(uintptr_t)p_buffer, (long)length,
-                           0L, 0L, 0L);
+    p_bytes = (const unsigned char *)p_buffer;
+    offset = 0;
+    remaining = length;
 
-    return stdoc_kernel_result(result);
+    while (remaining > 0)
+    {
+        size_t written;
+
+        if (stdoc_kernel_result(stdoc_syscall(
+                                    STDOC_SYS_WRITE, (long)fd,
+                                    (long)(uintptr_t)(p_bytes + offset),
+                                    (long)remaining, 0L, 0L, 0L),
+                                &written) != 0)
+        {
+            return -1;
+        }
+
+        if (written == 0)
+        {
+            return -1;
+        }
+
+        /*
+         * A kernel that reports more than it was asked for would push
+         * the cursor past the end of the object, so the result is not
+         * trusted beyond that point.
+         */
+        if (written > remaining)
+        {
+            return -1;
+        }
+
+        offset = offset + written;
+        remaining = remaining - written;
+    }
+
+    return 0;
 }
 
+/*
+ * Read into "p_buffer".
+ *
+ * A read is reported the same way as every other wrapper, so a short
+ * read is a success here; the count the kernel returns is kept out of
+ * this interface until the input layer needs it, rather than being
+ * exposed now for a caller that does not exist.
+ */
 int stdoc_sys_read(int fd, void *p_buffer, size_t length)
 {
     long result;
@@ -116,7 +181,7 @@ int stdoc_sys_read(int fd, void *p_buffer, size_t length)
                            (long)(uintptr_t)p_buffer, (long)length,
                            0L, 0L, 0L);
 
-    return stdoc_kernel_result(result);
+    return stdoc_kernel_result(result, NULL);
 }
 
 int stdoc_sys_close(int fd)
@@ -125,7 +190,7 @@ int stdoc_sys_close(int fd)
 
     result = stdoc_syscall(STDOC_SYS_CLOSE, (long)fd, 0L, 0L, 0L, 0L, 0L);
 
-    return stdoc_kernel_result(result);
+    return stdoc_kernel_result(result, NULL);
 }
 
 void stdoc_sys_exit(int status)
