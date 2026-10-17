@@ -48,9 +48,11 @@
  *
  * Unsupported in this release: floating-point conversions, positional
  * arguments ("%1$s"), the "%n" conversion and the "I" / "'" flags.
- * An unrecognised conversion consumes its argument and emits nothing,
- * which is undefined behaviour by the standard; emitting nothing is
- * the least surprising choice here.
+ * An unrecognised conversion emits nothing and consumes nothing:
+ * consuming it would need the type of the argument, which the format
+ * never names.  The behaviour of the call is undefined by the standard
+ * from that point on; emitting nothing is the least surprising choice
+ * here.
  */
 
 #include <limits.h>
@@ -113,6 +115,14 @@
  * at the same address, so one block serves both.  A null pointer
  * means the heap had no block to spare and every helper falls back to
  * its own stack buffer.
+ *
+ * "p_chunk" is that padding chunk - the tail of the scratch block, or
+ * the chunk_storage array in the frame of stdoc_vfprintf when the heap
+ * had nothing to spare - and "chunk_value" is the character it holds,
+ * so that a run of padding is filled once for the whole call instead
+ * of once per conversion.  Zero is its "not filled yet" value, which
+ * no padding character can be: padding is only ever a space or a
+ * zero.
  */
 typedef struct stdoc_output
 {
@@ -120,6 +130,8 @@ typedef struct stdoc_output
     int         count;
     int         failed;
     char       *p_scratch;
+    char       *p_chunk;
+    char        chunk_value;
     int         scratch_from_heap;
 } stdoc_output;
 
@@ -188,33 +200,39 @@ static void output_write(stdoc_output *p_output, const char *p_bytes,
  * chunks so that a wide field is a handful of system calls rather
  * than one call per byte.
  *
- * The chunk is the tail of the scratch block when the heap had one to
- * spare, and a stack array of the same size otherwise.
+ * The chunk is prepared once per padding character for the whole
+ * call: a conversion that pads with spaces after another one reuses
+ * the spaces that are already there, and only a change of character -
+ * which happens when a conversion pads with zeros - costs a refill.
  */
 static void output_repeat(stdoc_output *p_output, char value, size_t count)
 {
-    char   fallback[STDOC_SCRATCH_CHUNK];
-    char  *p_chunk;
     size_t index;
 
-    p_chunk = (p_output->p_scratch != NULL)
-                  ? p_output->p_scratch + STDOC_DIGIT_STORAGE
-                  : fallback;
-
-    for (index = 0; index < STDOC_SCRATCH_CHUNK; index = index + 1)
+    if (count == 0)
     {
-        p_chunk[index] = value;
+        return;
+    }
+
+    if (p_output->chunk_value != value)
+    {
+        for (index = 0; index < STDOC_SCRATCH_CHUNK; index = index + 1)
+        {
+            p_output->p_chunk[index] = value;
+        }
+
+        p_output->chunk_value = value;
     }
 
     while (count >= STDOC_SCRATCH_CHUNK)
     {
-        output_write(p_output, p_chunk, STDOC_SCRATCH_CHUNK);
+        output_write(p_output, p_output->p_chunk, STDOC_SCRATCH_CHUNK);
         count = count - STDOC_SCRATCH_CHUNK;
     }
 
     if (count > 0)
     {
-        output_write(p_output, p_chunk, count);
+        output_write(p_output, p_output->p_chunk, count);
     }
 }
 
@@ -378,15 +396,23 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     }
 
     /*
-     * The '+' and ' ' flags only ever apply to the signed conversions
-     * and to floating point, both of which reach this function as 'd'
-     * or 'i'.  For %u, %o, %x, %X and %p they are ignored, so "%+u"
-     * prints the value unchanged rather than prefixing it.
+     * The '+' and ' ' flags are specified for the signed conversions
+     * and for floating point, both of which reach this function as 'd'
+     * or 'i'.  This engine also accepts them for %p, following the
+     * reference C library, where the sign is placed in front of the
+     * "0x" prefix: "%+p" of a pointer prints "+0x1234".  For %u, %o,
+     * %x and %X the flags are ignored, so "%+u" prints the value
+     * unchanged rather than prefixing it.
+     *
+     * A null pointer has no digits to carry a sign: the reference C
+     * library prints "(nil)" for it, and so does this engine, reached
+     * before this function is.
      */
     sign_count = 0;
     sign = ' ';
     allow_sign = ((p_spec->conversion == 'd') ||
-                  (p_spec->conversion == 'i')) ? 1 : 0;
+                  (p_spec->conversion == 'i') ||
+                  (p_spec->conversion == 'p')) ? 1 : 0;
 
     if (negative != 0)
     {
@@ -595,6 +621,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
     stdoc_output  output;
     stdoc_spec    spec;
     const char   *p_format;
+    char          chunk_storage[STDOC_SCRATCH_CHUNK];
     size_t        run_length;
     uintmax_t     magnitude;
     int           negative;
@@ -617,6 +644,16 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
      */
     output.p_scratch = stdoc_malloc(STDOC_SCRATCH_SIZE);
     output.scratch_from_heap = (output.p_scratch != NULL) ? 1 : 0;
+
+    /*
+     * The padding chunk lives in the borrowed block when there is one,
+     * and in the frame of this call otherwise, so that it survives for
+     * as long as the call does and no helper has to prepare it again.
+     */
+    output.p_chunk = (output.p_scratch != NULL)
+                         ? output.p_scratch + STDOC_DIGIT_STORAGE
+                         : chunk_storage;
+    output.chunk_value = 0;
 
     p_format = format;
     magnitude = 0;
@@ -949,17 +986,26 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                 }
                 else
                 {
-                    length = stdoc_strlen(p_string);
-
                     /*
-                     * The precision caps the number of bytes shown; it
-                     * never truncates the read itself, so the string is
-                     * only walked up to the limit.
+                     * A precision caps the number of bytes shown, so a
+                     * field narrower than the string never walks past
+                     * the last byte it can show: the string is scanned
+                     * up to the limit and no further.  Without a
+                     * precision the whole string is measured.
                      */
-                    if ((spec.precision >= 0) &&
-                        ((size_t)spec.precision < length))
+                    length = 0;
+
+                    if (spec.precision < 0)
                     {
-                        length = (size_t)spec.precision;
+                        length = stdoc_strlen(p_string);
+                    }
+                    else
+                    {
+                        while ((length < (size_t)spec.precision) &&
+                               (p_string[length] != '\0'))
+                        {
+                            length = length + 1;
+                        }
                     }
                 }
 
