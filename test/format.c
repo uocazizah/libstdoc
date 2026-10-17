@@ -43,6 +43,14 @@
  *
  * Only conversions libstdoc implements appear here; floating point and
  * positional arguments are deliberately absent.
+ *
+ * The file is built with "-Wformat" switched off.  A good part of it
+ * pins down conversions that the reference C library accepts but the C
+ * standard leaves undefined - the '0' flag with a string, a precision
+ * on %p, a '+' on an unsigned conversion, a '#' on %d - and a compiler
+ * that refused to build the very cases under test would make the file
+ * useless.  test/CMakeLists.txt carries the same explanation, and the
+ * cases whose reason is not obvious say so where they are.
  */
 
 #include <limits.h>
@@ -106,6 +114,28 @@ int main(void)
     report(PRINTF("[%20p]\n", NULL));
     report(PRINTF("[%-20p]\n", NULL));
     report(PRINTF("[%.3p]\n", NULL));
+
+    /*
+     * The sign flags on a pointer, which the reference C library prints
+     * in front of the "0x" prefix and which this library reproduces.  A
+     * null pointer has no digits to carry a sign and stays "(nil)".
+     *
+     * "-Wformat" rejects '+' and ' ' on a pointer conversion, because
+     * the C standard does not define them there.  These cases are part
+     * of the reason test/format.c is built with the compiler check
+     * switched off, and the pragma states the same thing at the point
+     * of use so that the block stays buildable if that file-wide
+     * switch is ever removed.
+     */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+    report(PRINTF("[%+p]\n", (void *)0x1234));
+    report(PRINTF("[% p]\n", (void *)0x1234));
+    report(PRINTF("[%+32p]\n", (void *)0x1234));
+    report(PRINTF("[%+-32p]\n", (void *)0x1234));
+    report(PRINTF("[%+p]\n", NULL));
+    report(PRINTF("[% p]\n", NULL));
+#pragma GCC diagnostic pop
 
     /* Sign flags, which only ever apply to signed conversions. */
     report(PRINTF("[%+d]\n", 42));
