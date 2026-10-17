@@ -56,11 +56,13 @@ and may be overridden without editing a header:
     cmake -S . -B build -DSTDOC_HEAP_SIZE=1024
     cc -DSTDOC_HEAP_SIZE=8192 ...
 
-The value must be a positive number of bytes; the build rejects
-anything else at configure time.  A static assertion requires the
-arena to be at least four alignment units - 64 bytes on aarch64 - so
-it can always hold a block.  The tests do not depend on the value:
-they fill whatever heap the library was built with.
+The value must be a plain decimal number of bytes and at least 64; the
+configuration guard rejects anything else when the project is
+configured.  A static assertion in mem/heap.c requires the arena to be
+at least four alignment units - 64 bytes on aarch64 - so a build that
+bypasses CMake cannot produce an allocator with no room for a block.
+The tests do not depend on the value: they ask stdoc_heap_capacity what
+the arena holds and shape each scenario to fit.
 
 
 Layout of the arena
@@ -111,6 +113,13 @@ A request larger than the arena can hold fails without scanning.
 Release and merging
 -------------------
 
+The block list maintains one invariant: no two adjacent blocks are
+free.  A split leaves the tail free next to a block that stays in use,
+and a release absorbs the free blocks on both sides of the block being
+released, so the invariant holds before and after every operation.  It
+is what lets a release do all of its work in the single walk that finds
+the block, instead of walking the arena a second time to coalesce.
+
 Before anything is touched, the pointer is classified:
 
     outside the arena or misaligned   ignored / reported
@@ -121,15 +130,27 @@ Before anything is touched, the pointer is classified:
 The check that rejects a pointer into the middle of a block is a walk
 of the block list: only offsets the list actually steps over are
 accepted, and a payload size that does not add up stops the walk
-instead of running off the end of the arena.  A header that a merge
-already absorbed still reads as free, which is how a double free of a
-block no longer on the list is recognised.
+instead of running off the end of the arena.  The same walk reports the
+block that precedes the one being released, which is the only free
+block that can be on that side.
 
-A valid release marks the block free, decreases the accounting, and
-then merges every run of adjacent free blocks, so the arena returns to
-a single block once everything has been released.  The headers of
-absorbed blocks stay behind as stale bytes inside the payload; the
-list walk never lands on them again.
+The neighbours are then validated as well - the free block before, and
+the run of free blocks after - before a single byte of the arena is
+written, so a corrupt list is reported with the list untouched.  Only
+then is the released block marked free and the neighbours absorbed into
+it.
+
+The headers of absorbed blocks stay behind as stale bytes inside the
+merged payload.  They read as free, so a double free of a block that a
+merge absorbed is still recognised instead of looking like a pointer
+into a payload, and the list walk never lands on them again.  The
+accounting is decreased by the payload of the released block alone,
+which is what keeps two releases of blocks that later merged from
+giving back the same bytes twice.
+
+Releasing everything returns the arena to a single free block; the
+tests prove it by asking afterwards for an allocation that only the
+whole arena can serve.
 
 
 Failure modes of the safe variants
