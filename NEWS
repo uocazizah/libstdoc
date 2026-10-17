@@ -1,6 +1,126 @@
 libstdoc news
 ===============
 
+unreleased
+----------
+
+Changes made after the 1.0.0-beta release.  Nothing here is released
+yet.
+
+
+Bug fixes
+~~~~~~~~~
+
+  * io/syscall_linux.c: a system call that completed a transfer of 4096
+    bytes or more was reported as a failure.  The raw kernel result was
+    classified by comparing it, as an unsigned integer, against 4096 -
+    the magnitude of the smallest kernel error rather than the error
+    itself - so every count above that became "-1" and the bytes were
+    silently treated as lost.  Nothing in the library wrote more than
+    256 bytes at a time (the stream staging buffer is 256 bytes), so the
+    defect was invisible from the public interface and reachable only
+    through stdoc_sys_write.  The comparison is now against -4095, which
+    puts every failure in the top 4095 values of the unsigned range and
+    leaves every count below it.  test/largewrite.c pins the boundary.
+  * test/heap.c: the printf-scratch scenario used a format string whose
+    meaning is not the same everywhere - "%08.4d" combines the '0' flag
+    with a precision, and the standard says a precision makes the flag
+    inert - and passed a void pointer to %s.  It now uses conversions
+    whose meaning this dialect defines and a null char pointer, since
+    what that case exercises is the scratch accounting, not those
+    corners.
+
+Library
+~~~~~~~
+
+  * io/heap.c: a release now merges the free neighbours in the single
+    walk that finds the block, instead of walking the arena a second
+    time.  The list keeps one invariant - no two adjacent blocks are
+    free - which makes the merge a local operation; a release is
+    therefore roughly a third faster in a loop of allocations and
+    releases over a full arena, and the walk validates both neighbours
+    before it writes anything.
+  * io/file.c: stdoc_stream_write copies payloads into the staging
+    buffer block by block and scans only the newly staged bytes for a
+    newline, so a large write no longer copies the same bytes twice.
+  * io/vfprintf.c: the padding chunk is filled once per call instead of
+    once per character.  "%p" now honours the '+' and ' ' flags the way
+    the reference C library does, printing "+0x1234" and " 0x1234" for
+    a non-null pointer and holding no sign for "(nil)".
+  * include/libstdoc.h: stdoc_printf and stdoc_fprintf are declared
+    with the GNU "format(printf)" attribute where the compiler
+    understands it, so a mismatched call is caught while the program is
+    built.  The header documents that "%+p" is accepted by the
+    functions while "-Wformat" reports it, and how to quiet that one
+    diagnostic.
+  * io/stdoc_io.h: stdoc_sys_read and stdoc_sys_close are documented as
+    the platform layer of the input release that stdoc_stdin is waiting
+    for, rather than left looking like dead code.
+
+
+Build
+~~~~~
+
+  * The warning set grew from -Wall -Wextra -Wpedantic -Werror to
+    include -Wconversion, -Wsign-conversion, -Wshadow,
+    -Wstrict-prototypes, -Wmissing-prototypes, -Wcast-qual, -Wundef,
+    -Wswitch-default, -Wdouble-promotion and -Wvla.  Every file in the
+    project, tests included, builds clean under both GNU C and Clang
+    with it.
+  * "-no-pie" is gone from the link options.  "-static" already
+    produces a non-PIE executable, and passing "-no-pie" as well only
+    made Clang report it as an unused argument on every link.
+  * STDOC_HEAP_SIZE is validated when the project is configured: a
+    value that is not a plain decimal number, or that is below the 64
+    bytes the allocator can actually work with, is rejected with a
+    message instead of failing later.  The value also reaches the test
+    programs now, so a test is never built against a different arena
+    from the library it links.
+  * A new CI workflow (.github/workflows/ci.yml) builds and tests under
+    GNU C and Clang on an aarch64 runner, at the default arena size and
+    at the smallest one accepted, regenerates the format golden file
+    from the host C library and compares it, and checks that the
+    configuration guard rejects the values it documents as impossible.
+
+
+Tests
+~~~~~
+
+  * Thirteen tests under CTest, up from nine.
+  * test/differential.c compiles the same source once against the host C
+    library and once against libstdoc and compares the two case by case
+    - over two thousand combinations of flags, width and precision,
+    built at run time.  Unlike a golden file, the reference is live.
+  * test/stream.c covers the staging buffer, the discard and the
+    relative order of stdout and stderr, compared against golden output
+    in which the two streams are merged.
+  * test/largewrite.c writes 200000 bytes through the system-call
+    wrapper and checks the status, the length and the bytes on a file
+    and through a pipe.
+  * install_and_consume installs the library into a scratch prefix and
+    builds and runs test/consumer against it with find_package.
+  * test/heap.c and test/heap_abort.c shape their scenarios from
+    stdoc_heap_capacity instead of assuming an arena of a particular
+    size, so they pass from 64 bytes upwards.
+
+
+Documentation
+~~~~~~~~~~~~~
+
+  * docs/testing, docs/building, docs/formatting, docs/io and docs/heap
+    were brought back in line with the code: the arena minimum, the
+    warning set, the link options, the count-versus-error boundary, the
+    one-pass release, the compile-time format check, and the new tests.
+  * docs/building records a detail of linking without a C runtime that
+    is easy to meet the hard way: a static executable whose read-write
+    segment has no file-backed content is placed at a file offset past
+    the end of the file and dies with SIGBUS before main, and one
+    initialized object prevents it.
+  * docs/testing states what is still not covered, including the retry
+    for a short write and any architecture or operating system other
+    than the one the project is built for.
+
+
 1.0.0-beta
 --------------
 
