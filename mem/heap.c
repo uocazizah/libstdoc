@@ -45,9 +45,16 @@
  * alignment too, so a payload returned by stdoc_malloc is suitably
  * aligned for any object.  Allocation scans the run for the first
  * free block that fits and splits it when the leftover is large
- * enough to hold another block; release marks the block free and then
- * merges every run of adjacent free blocks, so the arena returns to a
+ * enough to hold another block; release marks the block free and
+ * merges it with its free neighbours, so the arena returns to a
  * single block after everything is released.
+ *
+ * Invariant.  No two adjacent blocks are free.  Every operation that
+ * changes the list keeps that true: a split leaves the tail free next
+ * to a block that was in use, and a release absorbs the free blocks on
+ * both sides of the one being released.  A release therefore has at
+ * most one free neighbour on each side and can merge in the same pass
+ * that found the block, instead of walking the arena a second time.
  *
  * Validation.  stdoc_free and stdoc_free_safe classify a pointer
  * before touching anything: outside the arena or misaligned, not the
@@ -124,6 +131,13 @@ typedef struct stdoc_heap_block
 #define STDOC_HEAP_INTERIOR 2
 #define STDOC_HEAP_DOUBLE   3
 #define STDOC_HEAP_CORRUPT  4
+
+/*
+ * Result of the "previous block" lookup when the block being looked
+ * for is the first one in the arena.  A real block start is always
+ * smaller than the arena, so this value cannot be mistaken for one.
+ */
+#define STDOC_HEAP_NO_PREVIOUS ((size_t)-1)
 
 /*
  * The arena itself.  The alignment specifier makes the first payload
@@ -211,12 +225,21 @@ static void stdoc_heap_initialise(void)
  * Returns 0 and stores the block in "*p_block" when it is there, and
  * -1 otherwise, which includes a list whose size fields do not add up
  * - the walk stops instead of reading past the arena.
+ *
+ * The start of the block before the one found is reported in
+ * "*p_previous", or STDOC_HEAP_NO_PREVIOUS when the block is the first
+ * one.  Reporting it here is what lets a release merge with the block
+ * before without walking the arena a second time; every block the walk
+ * steps over has its size fields validated before they are trusted.
  */
-static int stdoc_heap_find_block(size_t offset, stdoc_heap_block *p_block)
+static int stdoc_heap_find_block(size_t offset, stdoc_heap_block *p_block,
+                                 size_t *p_previous)
 {
     size_t cursor;
+    size_t previous;
 
     cursor = 0;
+    previous = STDOC_HEAP_NO_PREVIOUS;
 
     while (cursor < ((size_t)STDOC_HEAP_SIZE))
     {
@@ -239,94 +262,15 @@ static int stdoc_heap_find_block(size_t offset, stdoc_heap_block *p_block)
         if (cursor == offset)
         {
             *p_block = block;
+            *p_previous = previous;
             return 0;
         }
 
+        previous = cursor;
         cursor = cursor + stdoc_heap_header + block.payload;
     }
 
     return -1;
-}
-
-/*
- * Merge "payload" bytes of free space starting at "offset" into one
- * block.  The headers of the absorbed blocks stay behind as stale
- * bytes inside the payload; the list walk never lands on them again.
- */
-static void stdoc_heap_merge(size_t offset, size_t payload)
-{
-    stdoc_heap_block block;
-
-    block.payload = payload;
-    block.state = STDOC_HEAP_STATE_FREE;
-    block.magic = STDOC_HEAP_MAGIC;
-
-    stdoc_heap_block_store(offset, &block);
-}
-
-/*
- * Merge every run of adjacent free blocks after a release.  The
- * payload sizes are validated while walking so that a corrupted list
- * stops the walk instead of running off the end of the arena.
- */
-static void stdoc_heap_coalesce(void)
-{
-    size_t cursor;
-    size_t run_start;
-    size_t run_payload;
-    int    merging;
-
-    cursor = 0;
-    run_start = 0;
-    run_payload = 0;
-    merging = 0;
-
-    while (cursor < ((size_t)STDOC_HEAP_SIZE))
-    {
-        stdoc_heap_block block;
-        size_t           total;
-
-        if (cursor > (((size_t)STDOC_HEAP_SIZE) - stdoc_heap_header))
-        {
-            break;
-        }
-
-        stdoc_heap_block_load(cursor, &block);
-
-        if (((block.payload % STDOC_HEAP_ALIGNMENT) != 0) ||
-            (block.payload > (((size_t)STDOC_HEAP_SIZE) - cursor -
-                              stdoc_heap_header)))
-        {
-            break;
-        }
-
-        if (block.state == STDOC_HEAP_STATE_FREE)
-        {
-            if (merging == 0)
-            {
-                merging = 1;
-                run_start = cursor;
-                run_payload = block.payload;
-            }
-            else
-            {
-                run_payload = run_payload + stdoc_heap_header + block.payload;
-            }
-        }
-        else if (merging != 0)
-        {
-            stdoc_heap_merge(run_start, run_payload);
-            merging = 0;
-        }
-
-        total = stdoc_heap_header + block.payload;
-        cursor = cursor + total;
-    }
-
-    if (merging != 0)
-    {
-        stdoc_heap_merge(run_start, run_payload);
-    }
 }
 
 /*
@@ -335,13 +279,24 @@ static void stdoc_heap_coalesce(void)
  * Returns STDOC_HEAP_ACCEPT when the block was released (also for a
  * null pointer, which releases nothing), and one of the classification
  * values otherwise without having modified anything.
+ *
+ * The block list is walked once: the walk that finds the block also
+ * reports the one before it, and the blocks after it begin where the
+ * merged one ends, so the free neighbours are merged in the same pass.
+ * Everything is validated before the first byte is written, so a list
+ * that does not add up is reported with the arena still untouched.
  */
 static int stdoc_heap_release(void *p)
 {
-    uintptr_t       address;
-    uintptr_t       base;
-    size_t          offset;
-    size_t          block_offset;
+    uintptr_t        address;
+    uintptr_t        base;
+    size_t           offset;
+    size_t           block_offset;
+    size_t           previous_offset;
+    size_t           next_offset;
+    size_t           released_payload;
+    size_t           merged_payload;
+    int              merge_previous;
     stdoc_heap_block block;
 
     if (p == NULL)
@@ -371,7 +326,7 @@ static int stdoc_heap_release(void *p)
         return STDOC_HEAP_FOREIGN;
     }
 
-    if (stdoc_heap_find_block(block_offset, &block) != 0)
+    if (stdoc_heap_find_block(block_offset, &block, &previous_offset) != 0)
     {
         /*
          * No block starts here.  A header that a merge absorbed still
@@ -411,13 +366,109 @@ static int stdoc_heap_release(void *p)
         return STDOC_HEAP_CORRUPT;
     }
 
+    released_payload = block.payload;
+    merged_payload = block.payload;
+    merge_previous = 0;
+
+    /*
+     * The free block before this one, when there is one.  It is the
+     * block the walk stepped over, so its size fields were validated
+     * on the way; a header that has lost its magic, or a state that is
+     * neither free nor in use, means the list has lost its shape.
+     */
+    if (previous_offset != STDOC_HEAP_NO_PREVIOUS)
+    {
+        stdoc_heap_block previous;
+
+        stdoc_heap_block_load(previous_offset, &previous);
+
+        if (previous.magic != STDOC_HEAP_MAGIC)
+        {
+            return STDOC_HEAP_CORRUPT;
+        }
+
+        if (previous.state != STDOC_HEAP_STATE_USED)
+        {
+            if (previous.state != STDOC_HEAP_STATE_FREE)
+            {
+                return STDOC_HEAP_CORRUPT;
+            }
+
+            merge_previous = 1;
+            merged_payload = merged_payload + stdoc_heap_header +
+                             previous.payload;
+        }
+    }
+
+    /*
+     * The free blocks after this one.  They begin where the released
+     * block ends - the absorbed block before it reaches further back,
+     * not further forward - so the scan starts from the released
+     * payload.  The invariant of the list says at most one free block
+     * can be there, but the loop leaves the list merged even if some
+     * earlier fault left a run behind, and every block it considers is
+     * validated before its size is trusted.
+     */
+    next_offset = block_offset + stdoc_heap_header + released_payload;
+
+    while (next_offset < ((size_t)STDOC_HEAP_SIZE))
+    {
+        stdoc_heap_block next;
+
+        if (next_offset > (((size_t)STDOC_HEAP_SIZE) - stdoc_heap_header))
+        {
+            return STDOC_HEAP_CORRUPT;
+        }
+
+        stdoc_heap_block_load(next_offset, &next);
+
+        if ((next.magic != STDOC_HEAP_MAGIC) ||
+            ((next.state != STDOC_HEAP_STATE_FREE) &&
+             (next.state != STDOC_HEAP_STATE_USED)) ||
+            ((next.payload % STDOC_HEAP_ALIGNMENT) != 0) ||
+            (next.payload > (((size_t)STDOC_HEAP_SIZE) - next_offset -
+                             stdoc_heap_header)))
+        {
+            return STDOC_HEAP_CORRUPT;
+        }
+
+        if (next.state == STDOC_HEAP_STATE_USED)
+        {
+            break;
+        }
+
+        merged_payload = merged_payload + stdoc_heap_header + next.payload;
+        next_offset = next_offset + stdoc_heap_header + next.payload;
+    }
+
+    /*
+     * Everything adds up, so the arena may now be changed.  The
+     * released block is marked free on its own first: when the block
+     * before it is absorbed, its header stays behind as the stale
+     * bytes that make a later double free of the same pointer
+     * recognisable instead of looking like a pointer into a payload.
+     */
+    block.payload = released_payload;
     block.state = STDOC_HEAP_STATE_FREE;
     stdoc_heap_block_store(block_offset, &block);
 
-    stdoc_heap_used_bytes = stdoc_heap_used_bytes - block.payload;
-    stdoc_heap_used_blocks = stdoc_heap_used_blocks - 1u;
+    if (merge_previous != 0)
+    {
+        block.payload = merged_payload;
+        stdoc_heap_block_store(previous_offset, &block);
+    }
+    else if (merged_payload != released_payload)
+    {
+        block.payload = merged_payload;
+        stdoc_heap_block_store(block_offset, &block);
+    }
 
-    stdoc_heap_coalesce();
+    /*
+     * The accounting drops the payload of the released block alone: a
+     * free block that was absorbed never had an entry in it.
+     */
+    stdoc_heap_used_bytes = stdoc_heap_used_bytes - released_payload;
+    stdoc_heap_used_blocks = stdoc_heap_used_blocks - 1u;
 
     return STDOC_HEAP_ACCEPT;
 }
