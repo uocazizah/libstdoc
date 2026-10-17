@@ -67,8 +67,9 @@ size_t stdoc_heap_live_bytes(void);
 size_t stdoc_heap_live_blocks(void);
 
 /*
- * Total usable size of the arena, in bytes.  The accounting above is
- * compared against this value by tests that exhaust the heap.
+ * Total size of the arena, in bytes.  A test uses it to ask for an
+ * allocation that only the whole arena can serve, which is how the
+ * merging of free blocks is proven after everything was released.
  */
 size_t stdoc_heap_capacity(void);
 
