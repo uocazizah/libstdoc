@@ -15,7 +15,8 @@ for.  The documents listed at the end describe the larger pieces.
 Top-level entries
 -----------------
 
-    .github/          Automation: dependency and code scanning.
+    .github/          Automation: the build and test workflow,
+                      dependency updates and code scanning.
     .gitignore        Ignore rules for objects, libraries and builds.
     AGENTS.md         Conventions for automated agents working here.
     AUTHORS           Who maintains the project.
@@ -28,7 +29,9 @@ Top-level entries
     LICENSE           The license overview and how to choose.
     LICENSES/         The full license texts and their explanation.
     mem/              The dynamic memory allocator.
-    NEWS              Release notes, newest release first.
+    NEWS              Release notes; the newest release is first, and
+                      the changes made since the last release are kept
+                      in a section of their own above it.
     README            The project overview and the license summary.
     test/             The test programs and their build rules.
     build/            A local, out-of-source build directory; it is
@@ -125,25 +128,62 @@ test/ - the test programs
 -------------------------
 
     CMakeLists.txt    Builds the tests and registers them with CTest.
-    index.c           The original smoke test (legacy: built without
-                      "-Werror").
-    index.cxx         The same source as a C++ program, proving the
-                      header works from C++.  Built as a hosted
-                      program (legacy: also without "-Werror").
-    format.c          The formatting engine test; its golden file was
-                      produced by a reference C library.
+                      Every C test links the way a program for this
+                      library would: freestanding, with the library's
+                      own entry point.
+
+    The programs:
+
+    index.c, index.cxx
+                      The original smoke test, once as C and once as
+                      C++, proving the public header works from both.
+                      The C++ one is a hosted program: a C++ program
+                      needs the C++ runtime for its own start-up.
+    format.c          The formatting engine, against golden output a
+                      reference C library produced from the same
+                      source.
+    differential.c    The same engine, compiled once against the host C
+                      library and once against libstdoc and compared
+                      case by case, over cases built at run time.
     errors.c          The failure paths of the formatted functions.
+    stream.c          The staging buffer, the discard and the order of
+                      the two output streams.
+    largewrite.c      One 200000 byte write through the system-call
+                      layer, checked on a file and through a pipe.
     heap.c            The allocator, its safe variants and the leak
                       accounting.
     heap_abort.c      The fail-fast paths: one scenario per run,
                       selected on the command line.
-    expected-index.txt, expected-format.txt
-                      Golden output the programs are compared with.
+
+    The comparison scripts:
+
     CompareOutput.cmake
-                      Compares a program's output and exit status
-                      with a golden file.
+                      Runs a program and compares its output and exit
+                      status with a golden file.
+    CompareMergedOutput.cmake
+                      The same, with stdout and stderr merged into one
+                      file first, so their order survives.
+    CompareTwo.cmake  Runs two programs and requires the same bytes
+                      from both.
+    CheckLargeWrite.cmake
+                      Runs one program twice, on a file and on a pipe,
+                      and checks the status, the length and the bytes.
     CheckFatal.cmake  Requires a program to end with the documented
                       fatal status 134.
+    InstallTest.cmake Installs libstdoc into a scratch prefix and
+                      builds consumer/ against it.
+    consumer/         A small project that consumes the installed
+                      package through find_package.  It is not part of
+                      the libstdoc build.
+
+    The golden files:
+
+    expected-index.txt, expected-format.txt, expected-stream.txt
+                      The output the programs are compared with.  The
+                      first two were produced by a reference C library;
+                      the third states a property that only libstdoc
+                      defines.  See docs/testing.
+
     The whole directory is documented in docs/testing.
 
 
@@ -151,10 +191,14 @@ test/ - the test programs
 ---------------------
 
     dependabot.yml    Keeps the GitHub Actions dependencies updated.
+    workflows/ci.yml  Builds and tests the project under both compilers
+                      on an aarch64 runner, checks that the format
+                      golden file still matches a reference C library,
+                      and checks the configuration guard.
     workflows/codeql.yml
-                      The CodeQL analysis workflow.  Neither file
-                      takes part in the build: this repository builds
-                      with no network access.
+                      The CodeQL analysis workflow.  None of these
+                      files takes part in the build: this repository
+                      builds with no network access.
 
 
 Top-level files
@@ -162,9 +206,9 @@ Top-level files
 
     README            Project overview, repository structure and the
                       license summary.  Points here for details.
-    NEWS              Release notes; the newest release is first.
-                      1.0.0-beta covers the history from the commit
-                      "major changes" to the present tree.
+    NEWS              Release notes; the unreleased changes are first,
+                      then 1.0.0-beta, which covers the history from
+                      the commit "major changes" to that release.
     ChangeLog         States that Git holds the detailed history.
     AUTHORS           The project founder, maintainer and developer.
     LICENSE           Explains the three licenses the recipient may
