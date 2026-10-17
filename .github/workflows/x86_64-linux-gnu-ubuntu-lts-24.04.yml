@@ -1,0 +1,153 @@
+# libstdoc - build, test and verify from an x86_64 host
+#
+# The only target this library implements is Linux on aarch64, and the
+# configuration guard refuses every other architecture, so a native
+# x86_64 build of this library does not exist: an x86_64 runner has to
+# cross-compile to check anything at all.  That is what this workflow
+# does.  It builds with the GNU aarch64 cross toolchain and runs the
+# whole suite through an emulator, so the sources, the build rules and
+# the tests are exercised on a host of the other architecture.
+#
+# One emulator, registered with the kernel
+# ----------------------------------------
+#
+# Half of the suite does not start its program itself: the golden-file
+# comparisons run it from a CMake script, and the write-path and
+# fatal-path checks run it from a shell.  CMake's cross-compiling
+# emulator setting covers only a test whose command is the program
+# itself, so it would leave those tests trying to exec an aarch64 ELF
+# on an x86_64 kernel.  Registering qemu-aarch64 with binfmt_misc
+# instead makes an aarch64 executable start wherever it is exec'd from,
+# which covers the whole suite with one mechanism.
+#
+# The emulator is told where the cross toolchain keeps the aarch64
+# shared libraries, because two programs in the suite - the C++
+# compatibility test and the consumer the install test builds - are
+# hosted programs and therefore dynamically linked.
+#
+# The suite is not run under a second compiler here.  A Clang cross
+# build needs a linker and a sysroot arranged by hand, and the native
+# aarch64 workflow already exercises Clang; this one keeps to the cross
+# toolchain the distribution provides.
+#
+# The configuration guard is not repeated here either: on this host
+# every configure fails, for the architecture rather than for the
+# arena, so those checks would pass whatever the guard did.  What is
+# checked instead is that the architecture guard refuses the host it is
+# running on.
+
+name: build and test - aarch64 cross compiled on x86_64
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cross-build-and-test:
+    name: cross gcc with a ${{ matrix.heap_size }} byte arena
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # The default arena, the smallest the build accepts - everything
+        # the library does with the heap has to survive it, including
+        # the formatted calls that fall back to stack buffers - and an
+        # arena that holds a handful of blocks rather than one.
+        heap_size: [ 4096, 64, 192 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install the cross compiler and the emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+              gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static
+
+      - name: Register the emulator with the kernel
+        # The package carries a binfmt.d unit, which takes effect when
+        # the kernel's binfmt_misc service runs it - and that has
+        # already happened by the time a package is installed on a
+        # running machine.  Restart the service, then require the
+        # registration to be there instead of assuming it.
+        run: |
+          sudo systemctl restart systemd-binfmt || true
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "the aarch64 interpreter is not registered with binfmt_misc"
+            ls -l /proc/sys/fs/binfmt_misc/ 2>&1 || true
+            exit 1
+          fi
+
+      # CMAKE_SYSTEM_NAME and CMAKE_SYSTEM_PROCESSOR are what make this
+      # a cross build rather than a native one with an unusual compiler:
+      # without them CMake reports the host's architecture and the
+      # configuration guard stops the build in the first place.
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_SYSTEM_NAME=Linux
+          -DCMAKE_SYSTEM_PROCESSOR=aarch64
+          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
+          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+          -DSTDOC_HEAP_SIZE=${{ matrix.heap_size }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          # Where the emulated programs, and the emulator looking for
+          # their shared libraries, find the aarch64 system.
+          QEMU_LD_PREFIX: /usr/aarch64-linux-gnu
+        run: ctest --test-dir build --output-on-failure
+
+  golden-files:
+    name: golden files match the reference C library
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The conversion suite is compiled a second time against the host
+      # C library, from the same source and with the same calls, and its
+      # output is compared with the golden file.  A change that makes
+      # libstdoc disagree with the reference library fails here, and so
+      # does a golden file that was regenerated from libstdoc instead.
+      #
+      # Nothing about this depends on the architecture of either side,
+      # which is why it runs here as well as on the aarch64 runner.
+      - name: Regenerate the conversion golden file from the reference
+        run: |
+          cc -std=c17 -DSTDOC_REFERENCE -w test/format.c -o /tmp/reference-format
+          /tmp/reference-format > /tmp/expected-format.txt
+          diff -u test/expected-format.txt /tmp/expected-format.txt
+
+  architecture-guard:
+    name: the architecture guard refuses this host
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The library implements one architecture.  A configure for any
+      # other one has to fail, and to say which architecture it refused:
+      # a guard that stopped the build with a message about something
+      # else would leave the reader looking in the wrong place.
+      - name: Reject a configure for this host
+        run: |
+          if cmake -S . -B /tmp/rejected > /tmp/guard.log 2>&1; then
+            echo "a configure for x86_64 was accepted"
+            cat /tmp/guard.log
+            exit 1
+          fi
+          grep -F 'unsupported target architecture "x86_64"' /tmp/guard.log
