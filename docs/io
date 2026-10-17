@@ -75,10 +75,32 @@ this repository:
 
 The wrappers are stdoc_sys_write, stdoc_sys_read, stdoc_sys_close and
 stdoc_sys_exit.  The first three return 0 on success and -1 on
-failure, mirroring the convention documented for the public functions;
-the raw kernel result is classified with a single unsigned comparison
-against 4096, because the kernel reports errors as "-errno" in the
-range -4095 .. -1 and anything else is a non-negative result.
+failure, mirroring the convention documented for the public functions.
+A raw kernel result is classified by comparing it, as an unsigned
+integer, against -4095: the kernel reports a failure as "-errno" with
+errno in 1 .. 4095, so every failure lands in the top 4095 values of
+the unsigned range, while every count the kernel completed - however
+large - stays below it.  Comparing against the magnitude of the error
+instead would read a completed write of 4096 bytes or more as a
+failure, which is why that boundary has a test of its own; see
+docs/testing.
+
+stdoc_sys_write repeats the system call until the kernel has taken
+everything it was given.  A blocking write completes the whole transfer
+before it returns, but a short count is a normal result for a terminal
+whose output has been stopped and interrupted, for a non-blocking
+descriptor, and for anything else that runs out of room mid-transfer,
+so a single call reported as success would silently drop the rest of
+the buffer.  A result of zero for a request that was not zero is a
+failure rather than a retry, since repeating it would never make
+progress.
+
+stdoc_sys_read and stdoc_sys_close belong to the platform layer of the
+input release that stdoc_stdin is waiting for; nothing in the library
+calls them yet.  They are kept next to the write wrapper so that the
+whole operating-system surface stays in one file, and they share the
+same classification, so a read of 4096 bytes or more is a success
+there too.
 
 stdoc_sys_exit uses exit_group rather than exit so that every thread
 of the process is terminated.  libstdoc creates no threads, but a
