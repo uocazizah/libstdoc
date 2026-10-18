@@ -35,9 +35,12 @@
 /*
  * C++ entry point of libstdoc.
  *
- * The implementation is plain C17; this header only re-exposes the
- * public declarations inside an "extern "C"" linkage specification so
- * that the symbols are not mangled.  No C++ runtime is required.
+ * The interface is ISO C17 and the implementation behind it is ISO
+ * C++23, built freestanding; this header only re-exposes the public
+ * declarations inside an "extern "C"" linkage specification so that
+ * the symbols are not mangled.  No C++ runtime is required of a
+ * consumer, and C++23 is not required either: plain C++17 consumes
+ * this header as it always did.
  */
 
 #include "libstdoc.h"
