@@ -35,14 +35,27 @@
 /*
  * Internal interface shared by the libstdoc I/O and platform layers.
  *
- * Nothing declared here is part of the public API.  The declarations
- * exist so that the formatting engine, the stream objects and the
- * operating-system wrappers stay separated and individually testable.
+ * Nothing declared here is part of the public API, and the header is
+ * never installed.  The declarations exist so that the formatting
+ * engine, the stream objects and the operating-system wrappers stay
+ * separated and individually testable.
+ *
+ * The declarations are wrapped in an "extern "C"" specification so
+ * that the C++23 implementation defines them with the same linkage the
+ * declarations promise, and the header itself is kept ISO C17 so that
+ * the C test programs can include it too: a test that reaches an
+ * internal interface is how the stream discard, the system-call
+ * wrapper and the heap accounting are covered.
  */
 
+#include <stdarg.h>
 #include <stddef.h>
 
 #include "libstdoc.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * Size of the per-stream staging buffer, in bytes.
@@ -50,7 +63,7 @@
  * The buffer lives inside the stream object, so staging output never
  * allocates: the only heap use in the library is the scratch block
  * that the formatting engine borrows for one formatted call (see
- * io/vfprintf.c).  256 bytes keeps a whole formatted line in one
+ * io/vfprintf.cxx).  256 bytes keeps a whole formatted line in one
  * write system call in the common case without growing the stream
  * object meaningfully.
  */
@@ -76,7 +89,7 @@ struct stdoc_FILE
 };
 
 /*
- * Operating-system layer (io/syscall_linux.c).
+ * Operating-system layer (io/syscall_linux.cxx).
  *
  * Each wrapper returns 0 on success and -1 on failure, mirroring the
  * convention documented for the public functions.  The wrappers are
@@ -101,7 +114,8 @@ int stdoc_sys_close(int fd);
 void stdoc_sys_exit(int status) __attribute__((noreturn));
 
 /*
- * Generic system-call trampoline (assembly/syscall.S).
+ * Generic system-call trampoline (assembly/syscall_aarch64.S and
+ * assembly/syscall_x86_64.S, one per architecture).
  *
  * Arguments are passed following the ordinary C calling convention of
  * the target; the trampoline rearranges them into the system-call
@@ -113,7 +127,7 @@ long stdoc_syscall(long number, long arg1, long arg2, long arg3,
                    long arg4, long arg5, long arg6);
 
 /*
- * Stream helpers (io/file.c).
+ * Stream helpers (io/file.cxx).
  *
  * stdoc_stream_write stages "length" bytes into the stream buffer and
  * flushes it when full, when a newline is staged, or when the buffer
@@ -132,7 +146,7 @@ int stdoc_stream_flush(stdoc_FILE *stream);
 void stdoc_stream_discard(stdoc_FILE *stream);
 
 /*
- * Formatting engine (io/vfprintf.c).
+ * Formatting engine (io/vfprintf.cxx).
  *
  * Returns the number of characters written, or -1 on failure.
  */
@@ -148,5 +162,9 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args);
 size_t stdoc_strlen(const char *p_string);
 void  *stdoc_memcpy(void *p_destination, const void *p_source, size_t length);
 void  *stdoc_memset(void *p_destination, int value, size_t length);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* STDOC_IO_H */
