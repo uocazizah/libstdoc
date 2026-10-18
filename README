@@ -8,10 +8,12 @@ performance and control close to the traditional GNU C library
 (glibc).
 
 It is freestanding: it supplies its own entry point, its own formatted
-output and its own allocator, and links without a C runtime.  The target
-is Linux on aarch64; any other operating system or architecture is
-rejected when the project is configured, rather than silently mapped
-onto an implementation that does not match it.
+output and its own allocator, and links without a C runtime.  Its
+interface is ISO C17, usable from C and from C++; the implementation
+behind that interface is ISO C++23, built freestanding.  The targets
+are Linux on aarch64 and Linux on x86_64; any other operating system
+or architecture is rejected when the project is configured, rather
+than silently mapped onto an implementation that does not match it.
 
 Project Status
 -----------------
@@ -26,12 +28,12 @@ frequently until the final 1.0.0 release.
 Repository Structure
 -----------------------
 assembly/     Source Code of Assembly
-io/           Source Code of Input Output
-mem/          Source Code of Memory
+io/           Source Code of Input Output (C++23)
+mem/          Source Code of Memory (C++23)
 etc/          Project configuration files
-include/      Global include file
+include/      Public headers and internal headers
 docs/         Documentation
-test/         Test with pure C
+test/         Tests in C, plus a C++ compatibility test
 build/        manual build directory
 
 Documentation
