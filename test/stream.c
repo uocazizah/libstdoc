@@ -47,12 +47,12 @@
  * The public interface covers all of this except the discard, whose
  * effect a caller can only observe through a failed formatted call.
  * The internal header is included for that one function; see its
- * declaration in io/stdoc_io.h.
+ * declaration in include/stdoc_io.hxx.
  */
 
 #include <stddef.h>
 
-#include "stdoc_io.h"
+#include "stdoc_io.hxx"
 
 /*
  * Longer than the staging buffer, and patterned so that a chunk which
