@@ -1,42 +1,20 @@
-# libstdoc - build, test and verify from an x86_64 host
+# libstdoc - build, test and verify on an x86_64 runner
 #
-# The only target this library implements is Linux on aarch64, and the
-# configuration guard refuses every other architecture, so a native
-# x86_64 build of this library does not exist: an x86_64 runner has to
-# cross-compile to check anything at all.  That is what this workflow
-# does.  It builds with the GNU aarch64 cross toolchain and runs the
-# whole suite through an emulator, so the sources, the build rules and
-# the tests are exercised on a host of the other architecture.
+# The library implements Linux on aarch64 and Linux on x86_64.  This is
+# the workflow that builds and runs the x86_64 target: the runner is an
+# x86_64 machine, so what it builds is what the library claims to
+# support there, without a cross compiler and without an emulator.  The
+# companion workflow (aarch64-linux-gnu-ubuntu-lts-24.04.yml) does the
+# same for aarch64 on an aarch64 runner.
 #
-# One emulator, registered with the kernel
-# ----------------------------------------
-#
-# Half of the suite does not start its program itself: the golden-file
-# comparisons run it from a CMake script, and the write-path and
-# fatal-path checks run it from a shell.  CMake's cross-compiling
-# emulator setting covers only a test whose command is the program
-# itself, so it would leave those tests trying to exec an aarch64 ELF
-# on an x86_64 kernel.  Registering qemu-aarch64 with binfmt_misc
-# instead makes an aarch64 executable start wherever it is exec'd from,
-# which covers the whole suite with one mechanism.
-#
-# The emulator is told where the cross toolchain keeps the aarch64
-# shared libraries, because two programs in the suite - the C++
-# compatibility test and the consumer the install test builds - are
-# hosted programs and therefore dynamically linked.
-#
-# The suite is not run under a second compiler here.  A Clang cross
-# build needs a linker and a sysroot arranged by hand, and the native
-# aarch64 workflow already exercises Clang; this one keeps to the cross
-# toolchain the distribution provides.
-#
-# The configuration guard is not repeated here either: on this host
-# every configure fails, for the architecture rather than for the
-# arena, so those checks would pass whatever the guard did.  What is
-# checked instead is that the architecture guard refuses the host it is
-# running on.
+# Checked here are the build and the test suite under both compilers at
+# the arena sizes that matter at the boundary, the golden file of the
+# conversion suite regenerated from a reference C library, and the
+# architecture guard.  The arena guard is checked by the companion
+# workflow instead, where an impossible arena is the only thing a
+# configure can fail on.
 
-name: build and test - aarch64 cross compiled on x86_64
+name: build and test - native x86_64
 
 on:
   push:
@@ -53,62 +31,51 @@ permissions:
   contents: read
 
 jobs:
-  cross-build-and-test:
-    name: cross gcc with a ${{ matrix.heap_size }} byte arena
+  build-and-test:
+    name: ${{ matrix.compiler }} with a ${{ matrix.heap_size }} byte arena
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        # The default arena, the smallest the build accepts - everything
-        # the library does with the heap has to survive it, including
-        # the formatted calls that fall back to stack buffers - and an
-        # arena that holds a handful of blocks rather than one.
-        heap_size: [ 4096, 64, 192 ]
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            heap_size: 4096
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+            heap_size: 4096
+          # The smallest arena the build accepts.  Everything the
+          # library does with the heap has to survive it, including the
+          # formatted calls that fall back to stack buffers.
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            heap_size: 64
+          # An arena that holds a handful of blocks rather than one.
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            heap_size: 192
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install the cross compiler and the emulator
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-              gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static
-
-      - name: Register the emulator with the kernel
-        # The package carries a binfmt.d unit, which takes effect when
-        # the kernel's binfmt_misc service runs it - and that has
-        # already happened by the time a package is installed on a
-        # running machine.  Restart the service, then require the
-        # registration to be there instead of assuming it.
-        run: |
-          sudo systemctl restart systemd-binfmt || true
-          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
-            echo "the aarch64 interpreter is not registered with binfmt_misc"
-            ls -l /proc/sys/fs/binfmt_misc/ 2>&1 || true
-            exit 1
-          fi
-
-      # CMAKE_SYSTEM_NAME and CMAKE_SYSTEM_PROCESSOR are what make this
-      # a cross build rather than a native one with an unusual compiler:
-      # without them CMake reports the host's architecture and the
-      # configuration guard stops the build in the first place.
+      # No CMAKE_SYSTEM_* values and no toolchain file: the runner is
+      # x86_64 Linux, which is one of the two implemented targets, so
+      # the ordinary native configure is a build of the target.
       - name: Configure
         run: >
           cmake -S . -B build
-          -DCMAKE_SYSTEM_NAME=Linux
-          -DCMAKE_SYSTEM_PROCESSOR=aarch64
-          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
-          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
           -DSTDOC_HEAP_SIZE=${{ matrix.heap_size }}
 
       - name: Build
         run: cmake --build build --parallel
 
       - name: Test
-        env:
-          # Where the emulated programs, and the emulator looking for
-          # their shared libraries, find the aarch64 system.
-          QEMU_LD_PREFIX: /usr/aarch64-linux-gnu
         run: ctest --test-dir build --output-on-failure
 
   golden-files:
@@ -133,21 +100,52 @@ jobs:
           diff -u test/expected-format.txt /tmp/expected-format.txt
 
   architecture-guard:
-    name: the architecture guard refuses this host
+    name: the architecture guard accepts x86_64 and refuses the rest
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # The library implements one architecture.  A configure for any
-      # other one has to fail, and to say which architecture it refused:
-      # a guard that stopped the build with a message about something
-      # else would leave the reader looking in the wrong place.
-      - name: Reject a configure for this host
+      # A native configure of this host accepts x86_64, which is what
+      # the build job above does on every run.  What is checked here is
+      # what that configure cannot reach: the spelling of the processor
+      # is the only thing it can vary, so -DCMAKE_SYSTEM_PROCESSOR is
+      # how this host can present an architecture other than its own.
+      #
+      # Every architecture that is not implemented has to be refused,
+      # and the message has to name the one that was refused: a guard
+      # that stopped the build with a message about something else
+      # would leave the reader looking in the wrong place.
+      - name: Reject a configure for an architecture that is not implemented
         run: |
-          if cmake -S . -B /tmp/rejected > /tmp/guard.log 2>&1; then
-            echo "a configure for x86_64 was accepted"
-            cat /tmp/guard.log
-            exit 1
-          fi
-          grep -F 'unsupported target architecture "x86_64"' /tmp/guard.log
+          for processor in i686 arm riscv64 ppc64le; do
+            if cmake -S . -B /tmp/rejected \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR="$processor" > /tmp/guard.log 2>&1; then
+              echo "a configure for $processor was accepted"
+              cat /tmp/guard.log
+              exit 1
+            fi
+            grep -F "unsupported target architecture \"$processor\"" /tmp/guard.log
+          done
+
+      # x86_64 is not the only spelling this architecture arrives under.
+      # The aliases have to select the same startup file and the same
+      # system-call trampoline as the canonical name, and the library
+      # has to build with them; the aarch64 aliases are checked as far
+      # as a configure goes, since this host has no aarch64 toolchain.
+      - name: Accept the alias spellings of the implemented architectures
+        run: |
+          for processor in x86_64 amd64 AMD64; do
+            cmake -S . -B "/tmp/accepted-$processor" \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR="$processor" \
+                -DSTDOC_BUILD_TESTS=OFF
+            cmake --build "/tmp/accepted-$processor" --parallel
+          done
+          for processor in arm64 ARM64; do
+            cmake -S . -B "/tmp/accepted-$processor" \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR="$processor" \
+                -DSTDOC_BUILD_TESTS=OFF
+          done
