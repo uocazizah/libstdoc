@@ -50,19 +50,20 @@ no synchronisation.
 Sizing
 ------
 
-STDOC_HEAP_SIZE is defined in mem/stdoc_mem.h with a default of 4096
-and may be overridden without editing a header:
+STDOC_HEAP_SIZE is defined in include/stdoc_mem.hxx with a default of
+4096 and may be overridden without editing a header:
 
     cmake -S . -B build -DSTDOC_HEAP_SIZE=1024
     cc -DSTDOC_HEAP_SIZE=8192 ...
 
 The value must be a plain decimal number of bytes and at least 64; the
 configuration guard rejects anything else when the project is
-configured.  A static assertion in mem/heap.c requires the arena to be
-at least four alignment units - 64 bytes on aarch64 - so a build that
-bypasses CMake cannot produce an allocator with no room for a block.
-The tests do not depend on the value: they ask stdoc_heap_capacity what
-the arena holds and shape each scenario to fit.
+configured.  A static assertion in mem/heap.cxx requires the arena to
+be at least four alignment units - 64 bytes on aarch64 and on x86_64 -
+so a build that bypasses CMake cannot produce an allocator with no
+room for a block.  The tests do not depend on the value: they ask
+stdoc_heap_capacity what the arena holds and shape each scenario to
+fit.
 
 
 Layout of the arena
@@ -85,10 +86,12 @@ header, followed by its payload:
     magic      0x53444F43 ("SDOC"): marks bytes as a header this
                allocator wrote
 
-The header is rounded up to _Alignof(max_align_t) - 16 bytes on
-aarch64 - and every payload size is a multiple of that alignment
-too, so a payload is suitably aligned for any object.  A size request
-is rounded up the same way before it is looked for.
+The header is rounded up to alignof(std::max_align_t) - 16 bytes on
+aarch64 and on x86_64 - and every payload size is a multiple of that
+alignment too, so a payload is suitably aligned for any object.  A size request
+is rounded up the same way before it is looked for.  The state field
+is a scoped enumeration with a fixed 32-bit underlying type, so the
+on-arena layout is the same on every target.
 
 
 Allocation
@@ -178,7 +181,7 @@ docs/testing.
 Accounting (internal)
 ---------------------
 
-mem/stdoc_mem.h declares three queries used by the tests:
+include/stdoc_mem.hxx declares three queries used by the tests:
 
     size_t stdoc_heap_live_bytes(void);    payload bytes reserved
     size_t stdoc_heap_live_blocks(void);   blocks they live in
@@ -206,13 +209,13 @@ Design notes and limits
   * No system call is used, so the allocator behaves identically on
     any operating system that builds the library, and nothing here
     needs to grow the heap.
-  * Inside mem/heap.c the arena - a declared "unsigned char" array -
-    is only read and written through character lvalues, and block
-    headers are moved with stdoc_memcpy rather than by casting the
-    storage to a structure pointer, so strict aliasing is respected
-    for everything the library itself does with it.  What a caller
-    does with the payload it receives is the caller's own effective
-    type, as with any other allocator.
+  * Inside mem/heap.cxx the arena - a declared "std::byte" array - is
+    only read and written through byte lvalues, and block headers are
+    moved with stdoc_memcpy rather than by casting the storage to a
+    structure pointer, so strict aliasing is respected for everything
+    the library itself does with it.  What a caller does with the
+    payload it receives is the caller's own effective type, as with
+    any other allocator.
   * A pointer that is freed after its offset has been handed out again
     to a later allocation cannot be told apart from a valid pointer of
     that later allocation.  No allocator can: the information is not
