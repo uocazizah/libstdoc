@@ -2,11 +2,17 @@ map of the libstdoc repository
 ==============================
 
 libstdoc is a small, freestanding standard C library for Linux on
-aarch64.  It is built and linked without any host C library: it
-provides its own program entry point, its own system-call layer and
-its own formatting engine, which is what makes the test programs a
-complete demonstration of the library rather than a hosted build that
-happens to contain it.
+aarch64 and on x86_64.  It is built and linked without any host C
+library: it provides its own program entry point, its own system-call
+layer and its own formatting engine, which is what makes the test
+programs a complete demonstration of the library rather than a hosted
+build that happens to contain it.
+
+The interface of the library is ISO C17: programs written in C and
+programs written in C++ both link it, and the C test programs include
+the internal headers as well.  The implementation behind that
+interface is ISO C++23; it is compiled freestanding, so it still may
+not call a host C library or use a C++ runtime.
 
 This document lists every entry in the repository and says what it is
 for.  The documents listed at the end describe the larger pieces.
@@ -15,7 +21,7 @@ for.  The documents listed at the end describe the larger pieces.
 Top-level entries
 -----------------
 
-    .github/          Automation: the build and test workflow,
+    .github/          Automation: the build and test workflows,
                       dependency updates and code scanning.
     .gitignore        Ignore rules for objects, libraries and builds.
     AGENTS.md         Conventions for automated agents working here.
@@ -24,11 +30,12 @@ Top-level entries
     CMakeLists.txt    The build: library, tests, installation.
     docs/             This directory: the documentation.
     etc/              Templates for the installed package metadata.
-    include/          The public headers, the API of the library.
-    io/               The C sources of the input/output layer.
+    include/          The public headers and the internal headers the
+                      tests share with the library.
+    io/               The C++23 sources of the input/output layer.
     LICENSE           The license overview and how to choose.
     LICENSES/         The full license texts and their explanation.
-    mem/              The dynamic memory allocator.
+    mem/              The dynamic memory allocator (C++23).
     NEWS              Release notes; the newest release is first, and
                       the changes made since the last release are kept
                       in a section of their own above it.
@@ -41,45 +48,53 @@ Top-level entries
 assembly/ - the runtime in assembly
 -----------------------------------
 
-    start_aarch64.S   Program entry point.  The kernel enters _start
-                      with argc, argv and envp on the stack; the file
-                      clears the frame chain, calls main(argc, argv,
-                      envp) and hands main's return value to
-                      stdoc_sys_exit.  There are no constructors, no
-                      ".init_array" walk and no atexit handling: the
-                      freestanding startup path does not provide
-                      them.  Documented in docs/io.
-    syscall.S         The system-call trampoline.  It converts the
-                      ordinary C calling convention into the Linux
-                      aarch64 system-call convention (number in x8,
+    start_aarch64.S   Program entry point for Linux on aarch64.  The
+                      kernel enters _start with argc, argv and envp on
+                      the stack; the file clears the frame chain, calls
+                      main(argc, argv, envp) and hands main's return
+                      value to stdoc_sys_exit.  There are no
+                      constructors, no ".init_array" walk and no atexit
+                      handling: the freestanding startup path does not
+                      provide them.  Documented in docs/io.
+    start_x86_64.S    The same for Linux on x86_64.  It also aligns
+                      the stack to 16 bytes before the call, as the
+                      System V AMD64 ABI requires.
+    syscall_aarch64.S The system-call trampoline for aarch64.  It
+                      converts the ordinary C calling convention into
+                      the Linux system-call convention (number in x8,
                       arguments in x0..x5, result in x0) with a single
                       "svc #0".  Documented in docs/io.
+    syscall_x86_64.S  The system-call trampoline for x86_64: the
+                      number goes in rax, the fourth argument in r10,
+                      and the kernel is entered with "syscall".
+                      Documented in docs/io.
 
 
 io/ - the input/output layer
 ----------------------------
 
-    stdoc_io.h        The internal interface shared by this layer and
-                      the platform layer.  Nothing in it is public
-                      API.  It also defines STDOC_BUFFER_SIZE, the
-                      size of a stream's staging buffer.
-    file.c            The three standard streams (stdoc_stdin,
+    The sources here are ISO C++23.  Every function the headers declare
+    is defined with C linkage, so the archive exports the C interface
+    and nothing else; the declarations live in include/stdoc_io.hxx.
+
+    file.cxx          The three standard streams (stdoc_stdin,
                       stdoc_stdout, stdoc_stderr) and the staging
                       logic: stdoc_stream_write, stdoc_stream_flush
-                      and stdoc_stream_discard.  Documented in
-                      docs/io.
-    vfprintf.c        The formatting engine, stdoc_vfprintf.  Parser
+                      and stdoc_stream_discard.  The stream objects are
+                      "constinit", so they need no dynamic
+                      initialization.  Documented in docs/io.
+    vfprintf.cxx      The formatting engine, stdoc_vfprintf.  Parser
                       and formatter live in one translation unit.
                       Documented in docs/formatting.
-    printf.c          stdoc_printf: the stdoc_stdout wrapper around
+    printf.cxx        stdoc_printf: the stdoc_stdout wrapper around
                       stdoc_vfprintf.
-    fprintf.c         stdoc_fprintf: the same for a given stream.
-    syscall_linux.c   The operating-system wrappers
+    fprintf.cxx       stdoc_fprintf: the same for a given stream.
+    syscall_linux.cxx The operating-system wrappers
                       (stdoc_sys_write, stdoc_sys_read, stdoc_sys_close,
                       stdoc_sys_exit) and the only place where Linux
                       system-call numbers appear.  Documented in
                       docs/io.
-    string.c          The internal helpers stdoc_strlen, stdoc_memcpy
+    string.cxx        The internal helpers stdoc_strlen, stdoc_memcpy
                       and stdoc_memset, which exist so that the
                       library links with "-nostdlib" without taking
                       symbols from a host C library.
@@ -88,17 +103,18 @@ io/ - the input/output layer
 mem/ - dynamic memory
 ---------------------
 
-    heap.c            The allocator: a static arena, first-fit block
+    heap.cxx          The allocator: a static arena, first-fit block
                       allocation with splitting and merging, the safe
                       variants that terminate the process on a
                       detected fault, and the accounting the tests
-                      assert on.  Documented in docs/heap.
-    stdoc_mem.h       The internal header: STDOC_HEAP_SIZE and the
-                      accounting queries.  It is not installed.
+                      assert on.  The arena is an array of "std::byte"
+                      and the block state is a fixed-width scoped
+                      enumeration, so the on-arena layout is the same
+                      on every target.  Documented in docs/heap.
 
 
-include/ - the public API
--------------------------
+include/ - the headers
+-----------------------
 
     libstdoc.h        The C header: the streams, stdoc_printf,
                       stdoc_fprintf and the dynamic memory functions
@@ -112,6 +128,17 @@ include/ - the public API
                       inside an "extern "C"" specification so the
                       symbols are not mangled.  No C++ runtime is
                       required.
+    stdoc_io.hxx      The internal interface shared by the I/O layer
+                      and the platform layer: the stream structure,
+                      STDOC_BUFFER_SIZE and the internal function
+                      declarations.  It is not installed, and it is
+                      kept ISO C17 so the C tests can include it; the
+                      declarations are wrapped in an "extern "C"" for
+                      the C++23 implementation.
+    stdoc_mem.hxx     The internal header of the allocator:
+                      STDOC_HEAP_SIZE and the accounting queries used
+                      by the tests.  It is not installed and follows
+                      the same rules as stdoc_io.hxx.
 
 
 etc/ - installed package metadata
@@ -138,7 +165,10 @@ test/ - the test programs
                       The original smoke test, once as C and once as
                       C++, proving the public header works from both.
                       The C++ one is a hosted program: a C++ program
-                      needs the C++ runtime for its own start-up.
+                      needs the C++ runtime for its own start-up.  It
+                      is compiled as C++17 on purpose, so the test
+                      proves that consuming libstdoc does not require
+                      C++23.
     format.c          The formatting engine, against golden output a
                       reference C library produced from the same
                       source.
@@ -170,6 +200,12 @@ test/ - the test programs
                       and checks the status, the length and the bytes.
     CheckFatal.cmake  Requires a program to end with the documented
                       fatal status 134.
+    CheckFreestanding.cmake
+                      Inspects the built archive: every undefined symbol
+                      has to be "main" or a libstdoc symbol, no exported
+                      symbol may be a mangled C++ name, and no member
+                      may hold a section that runs code before the
+                      program.
     InstallTest.cmake Installs libstdoc into a scratch prefix and
                       builds consumer/ against it.
     consumer/         A small project that consumes the installed
@@ -191,10 +227,18 @@ test/ - the test programs
 ---------------------
 
     dependabot.yml    Keeps the GitHub Actions dependencies updated.
-    workflows/ci.yml  Builds and tests the project under both compilers
-                      on an aarch64 runner, checks that the format
-                      golden file still matches a reference C library,
-                      and checks the configuration guard.
+    workflows/aarch64-linux-gnu-ubuntu-lts-24.04.yml
+                      Builds and tests the project on an aarch64
+                      runner under both compilers, checks that the
+                      format golden file still matches a reference C
+                      library, and checks the configuration guard.
+    workflows/x86_64-linux-gnu-ubuntu-lts-24.04.yml
+                      The same for x86_64, with a check that the
+                      architecture guard refuses an architecture that
+                      is not implemented in addition.
+    workflows/security.yml
+                      clang-tidy, flawfinder and the dependency
+                      review.
     workflows/codeql.yml
                       The CodeQL analysis workflow.  None of these
                       files takes part in the build: this repository
@@ -216,7 +260,8 @@ Top-level files
     LICENSES/         GPL-2.0.txt, LGPL-2.1.txt, Apache-2.0.txt and a
                       README that explains how the choice works.
     AGENTS.md         The conventions that govern changes to this
-                      tree: C17, freestanding rules, style, the
+                      tree: the language rules (C++23 implementation,
+                      C17 interface), freestanding rules, style, the
                       priority of instructions.  Read it before
                       editing anything.
 
