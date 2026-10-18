@@ -33,6 +33,11 @@ What is registered today
     heap_abort_invalid_pointer
                           safe bad pointer terminates with 134
     index_cxx_output      the same golden output, from C++
+    archive_is_freestanding
+                          the built archive refers to no C library and
+                          no C++ runtime, exports no mangled name and
+                          holds no section that runs code before the
+                          program
     install_and_consume   the library installs, and a separate project
                           builds and runs against the installation
 
@@ -112,6 +117,20 @@ Installation
 
     Used by install_and_consume.
 
+Archive inspection
+    CheckFreestanding.cmake runs nm and readelf over the built archive
+    and requires three properties of every member: every undefined
+    symbol is "main" or a "stdoc"-prefixed symbol of the library, no
+    exported symbol carries a C++ mangled name, and no member holds an
+    ".init_array", ".ctors", ".tdata" or similar section.  A static
+    library is never linked on its own, so inspecting it is the only
+    way to prove this for every member instead of only for the members
+    a particular link happens to need.  The check fails rather than
+    skips when nm or readelf is missing, so the property is never
+    assumed.
+
+    Used by archive_is_freestanding.
+
 
 Golden files
 ------------
@@ -144,25 +163,29 @@ review the diff before committing it.
 Rules a new test follows
 ------------------------
 
-  * Freestanding tests compile assembly/start_aarch64.S into
-    themselves, so linking never depends on the linker recovering a
-    symbol from an archive, and link with -nostdlib -static.
-  * Every C test uses the warning policy the library is built with,
-    with -fno-builtin and -fno-stack-protector.  Two programs are the
-    documented exception: test/format.c and test/errors.c are built
-    with -Wno-format, because a good part of what they pin down - the
-    '0' flag on a string, a precision on %p, a '+' on an unsigned
+  * Freestanding tests compile the startup file of the target
+    architecture (assembly/start_<processor>.S) into themselves, so
+    linking never depends on the linker recovering a symbol from an
+    archive, and link with -nostdlib -static.
+  * The C tests use the warning policy the library is built with for
+    C, plus -fno-builtin and -fno-stack-protector; the C++ test uses
+    the C++ set and is linked as a hosted program, because a C++
+    program needs the C++ runtime for its own start-up.  Two programs
+    are the documented exception: test/format.c and test/errors.c are
+    built with -Wno-format, because a good part of what they pin down -
+    the '0' flag on a string, a precision on %p, a '+' on an unsigned
     conversion, an empty format string, a width literal too large for an
     int - is behaviour this library defines on purpose and "-Wformat"
     refuses to compile.  The reason is stated again where those cases
     are, in the files themselves.
   * A test that needs internals includes the internal header of that
-    layer (io/stdoc_io.h or mem/stdoc_mem.h) by adding the directory
-    to that target only.  errors.c does this on purpose: a stream
-    bound to a bad descriptor cannot be obtained through the public
-    interface, and its sticky-error behaviour is worth testing.
-    stream.c uses the same header for stdoc_stream_discard, and
-    largewrite.c for stdoc_sys_write.
+    layer (include/stdoc_io.hxx or include/stdoc_mem.hxx) by name; the
+    include directory is already on the path of every test, because
+    the library carries it as an interface requirement.  errors.c does
+    this on purpose: a stream bound to a bad descriptor cannot be
+    obtained through the public interface, and its sticky-error
+    behaviour is worth testing.  stream.c uses the same header for
+    stdoc_stream_discard, and largewrite.c for stdoc_sys_write.
   * A test that checks a value carries its own verdict (exit status),
     so it needs no golden file.
   * A program whose output is compared with a golden file writes
@@ -175,12 +198,12 @@ The leak policy of the heap tests
 ---------------------------------
 
 The allocator tests use small allocations only, so anything a bug loses
-stays small, and the accounting in mem/stdoc_mem.h turns any leak into a
-failing check: after every scenario the live byte and block counts must
-be back at zero.  The exhaustion scenario deliberately fills the arena
-to prove that a full heap behaves - stdoc_malloc reports it, printf
-falls back to its stack buffer, and releasing everything restores the
-whole arena.
+stays small, and the accounting in include/stdoc_mem.hxx turns any leak
+into a failing check: after every scenario the live byte and block
+counts must be back at zero.  The exhaustion scenario deliberately
+fills the arena to prove that a full heap behaves - stdoc_malloc
+reports it, printf falls back to its stack buffer, and releasing
+everything restores the whole arena.
 
 The tests do not depend on the arena size: they ask the allocator what
 it has and shape the scenario accordingly, so the same sources run
@@ -192,7 +215,7 @@ configuration guard rejects anything below 64.
 What is not tested
 ------------------
 
-  * The retry for a short write in io/syscall_linux.c is not covered by
+  * The retry for a short write in io/syscall_linux.cxx is not covered by
     an automated test.  A short write cannot be produced on demand: a
     blocking write completes the whole transfer before it returns, and
     the cases that do return early - a terminal whose output has been
@@ -209,9 +232,10 @@ What is not tested
   * Sanitizers and valgrind are not run: a "-nostdlib" freestanding
     program has no runtime for them.  Leak detection uses the
     library's own accounting instead.
-  * Only the host that builds the project (aarch64 Linux) is
-    exercised.  No other operating system or architecture is claimed
-    to work without a toolchain and a successful build.
+  * Only the architectures a workflow builds the project for (Linux
+    on aarch64 and on x86_64) are exercised.  No other operating
+    system or architecture is claimed to work without a toolchain and
+    a successful build.
   * The comparison against a reference C library covers the
     conversions both implement.  Where they are documented to differ,
     the difference is pinned by a golden file instead; see
