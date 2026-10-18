@@ -47,8 +47,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "stdoc_io.h"
-#include "stdoc_mem.h"
+#include "stdoc_io.hxx"
+#include "stdoc_mem.hxx"
 
 /*
  * Compare two null-terminated strings without a string function of
