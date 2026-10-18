@@ -5,20 +5,16 @@
 # printf, the only _start and the only string helpers it can use are
 # the ones this project provides.
 
-set(STDOC_START_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../assembly/start_aarch64.S)
-set(STDOC_IO_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../io)
-set(STDOC_MEM_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../mem)
+# The startup file of the target architecture, chosen by the guard in
+# the top-level CMakeLists.txt.
+set(STDOC_START_SOURCE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../assembly/start_${STDOC_PROCESSOR}.S)
 
 # The warning set of the tests is the one the library is built with, so
-# a test can never be sloppier than the code it exercises.
-#
-# The C++ test gets the same set minus the two options that only exist
-# for C: GNU C++ rejects them outright, and a warning about the warning
-# flag would fail the build before compiling anything.
+# a test can never be sloppier than the code it exercises: the C tests
+# use the C set, and the C++ test the C++ set.
 set(STDOC_TEST_WARNINGS ${STDOC_C_WARNINGS})
-set(STDOC_TEST_WARNINGS_CXX ${STDOC_C_WARNINGS})
-list(REMOVE_ITEM STDOC_TEST_WARNINGS_CXX -Wstrict-prototypes)
-list(REMOVE_ITEM STDOC_TEST_WARNINGS_CXX -Wmissing-prototypes)
+set(STDOC_TEST_WARNINGS_CXX ${STDOC_CXX_WARNINGS})
 
 # The conversion suite and the error suite deliberately use format
 # strings that "-Wformat" rejects: a width literal that does not fit in
@@ -103,14 +99,12 @@ add_test(NAME differential
 # through the public interface, and the sticky-error behaviour is worth
 # testing.
 stdoc_add_test_program(test_errors "${STDOC_FORMAT_TEST_WARNINGS}" errors.c)
-target_include_directories(test_errors PRIVATE ${STDOC_IO_SOURCE_DIR})
 add_test(NAME error_handling COMMAND test_errors)
 
 # stream.c: the staging buffer, the discard, and the relative order of
 # stdout and stderr.  Its golden file is the two streams merged into
 # one, so it pins where a diagnostic lands and not only its text.
 stdoc_add_test_program(test_stream "${STDOC_TEST_WARNINGS}" stream.c)
-target_include_directories(test_stream PRIVATE ${STDOC_IO_SOURCE_DIR})
 
 add_test(NAME stream_output
     COMMAND ${CMAKE_COMMAND}
@@ -127,7 +121,6 @@ add_test(NAME stream_output
 # stdoc_kernel_result and proves that a transfer the kernel carries out
 # in pieces arrives whole.
 stdoc_add_test_program(test_largewrite "${STDOC_TEST_WARNINGS}" largewrite.c)
-target_include_directories(test_largewrite PRIVATE ${STDOC_IO_SOURCE_DIR})
 
 add_test(NAME large_write_is_reported
     COMMAND ${CMAKE_COMMAND}
@@ -142,10 +135,6 @@ add_test(NAME large_write_is_reported
 # behind stays that small, and the test fails unless the live byte and
 # block counts are back at zero after each one.
 stdoc_add_test_program(test_heap "${STDOC_TEST_WARNINGS}" heap.c)
-target_include_directories(test_heap PRIVATE
-    ${STDOC_IO_SOURCE_DIR}
-    ${STDOC_MEM_SOURCE_DIR}
-)
 add_test(NAME heap_checks COMMAND test_heap)
 
 # heap_abort.c: the fail-fast paths of the safe functions.  Each
@@ -153,10 +142,6 @@ add_test(NAME heap_checks COMMAND test_heap)
 # CheckFatal.cmake asserts; a scenario that exits cleanly or crashes
 # fails instead of passing unnoticed.
 stdoc_add_test_program(test_heap_abort "${STDOC_TEST_WARNINGS}" heap_abort.c)
-target_include_directories(test_heap_abort PRIVATE
-    ${STDOC_IO_SOURCE_DIR}
-    ${STDOC_MEM_SOURCE_DIR}
-)
 
 foreach(scenario overflow oom double_free invalid_pointer)
     add_test(NAME heap_abort_${scenario}
@@ -167,21 +152,40 @@ foreach(scenario overflow oom double_free invalid_pointer)
     )
 endforeach()
 
-if(STDOC_HAVE_CXX)
-    # The C++ test proves that <libstdoc.hpp> is usable from C++ and
-    # that the C symbols link under their unmangled names.
-    #
-    # It is deliberately not built like the C tests: a C++ program needs
-    # the C++ runtime for its own start-up, so it is linked as an
-    # ordinary hosted program against the host C++ toolchain, with the
-    # library archived into it.  It also must not be compiled with
-    # -ffreestanding, which would make clang mangle main() and leave the
-    # program without an entry point.  Only the warning policy is shared.
-    add_executable(test_index_cxx index.cxx)
-    target_link_libraries(test_index_cxx PRIVATE stdoc)
-    target_compile_options(test_index_cxx PRIVATE ${STDOC_TEST_WARNINGS_CXX})
-    stdoc_add_output_test(index_cxx_output test_index_cxx expected-index.txt)
-endif()
+# The C++ test proves that <libstdoc.hpp> is usable from C++ and
+# that the C symbols link under their unmangled names.
+#
+# It is deliberately not built like the C tests: a C++ program needs
+# the C++ runtime for its own start-up, so it is linked as an
+# ordinary hosted program against the host C++ toolchain, with the
+# library archived into it.  It also must not be compiled with
+# -ffreestanding, which would make clang mangle main() and leave the
+# program without an entry point.  Only the warning policy is shared.
+#
+# It is compiled as C++17 on purpose: the public header promises to be
+# usable from C++ consumers, and building the test against the older
+# standard proves that consuming libstdoc does not require C++23.
+add_executable(test_index_cxx index.cxx)
+target_link_libraries(test_index_cxx PRIVATE stdoc)
+target_compile_options(test_index_cxx PRIVATE ${STDOC_TEST_WARNINGS_CXX})
+set_target_properties(test_index_cxx PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+)
+stdoc_add_output_test(index_cxx_output test_index_cxx expected-index.txt)
+
+# archive_is_freestanding: the archive itself must not depend on a C
+# library, a C++ runtime or a compiler runtime helper, and must not
+# contain anything that runs before the program does.  A static
+# library is never linked on its own, so this is checked by inspecting
+# the archive; CheckFreestanding.cmake explains what is verified.
+add_test(NAME archive_is_freestanding
+    COMMAND ${CMAKE_COMMAND}
+        -DARCHIVE=$<TARGET_FILE:stdoc>
+        -DNM=${CMAKE_NM}
+        -DREADELF=${CMAKE_READELF}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckFreestanding.cmake
+)
 
 # install_and_consume: libstdoc is configured, built and installed into a
 # scratch prefix, and a separate project is then built against that
@@ -205,9 +209,9 @@ set(STDOC_INSTALL_TEST_ARGS
     -DHEAP_SIZE=${STDOC_HEAP_SIZE}
 )
 
-if(CMAKE_CXX_COMPILER)
-    list(APPEND STDOC_INSTALL_TEST_ARGS -DCXX_COMPILER=${CMAKE_CXX_COMPILER})
-endif()
+list(APPEND STDOC_INSTALL_TEST_ARGS
+    -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+)
 
 # A cross build fixes the target name and processor on its own configure
 # line, so the architecture guard never consults the host.  The nested
