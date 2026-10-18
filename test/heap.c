@@ -32,7 +32,7 @@
  * The heap, exercised with small allocations only.
  *
  * The arena is 4096 bytes by default, so anything this test leaks
- * stays a few kilobytes at most, and the accounting in stdoc_mem.h
+ * stays a few kilobytes at most, and the accounting in stdoc_mem.hxx
  * turns any leak into a failing check: after every scenario the live
  * byte and block counts must be back at zero.  The exhaustion scenario
  * deliberately fills the arena to prove that a full heap behaves -
@@ -46,8 +46,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "stdoc_io.h"
-#include "stdoc_mem.h"
+#include "stdoc_io.hxx"
+#include "stdoc_mem.hxx"
 
 static int failures;
 
