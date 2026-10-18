@@ -39,18 +39,26 @@
  * therefore defined here and prefixed so that they never collide with
  * a host C library when libstdoc is linked into a hosted program.
  *
+ * The definitions carry the C linkage the internal header declares, so
+ * the C test programs can link them under their unmangled names.
+ *
  * None of these functions is part of the public API.
  */
 
-#include "stdoc_io.h"
+#include <cstddef>
 
-size_t stdoc_strlen(const char *p_string)
+#include "stdoc_io.hxx"
+
+namespace stdoc::io
 {
-    size_t length;
+
+extern "C" std::size_t stdoc_strlen(const char *p_string)
+{
+    std::size_t length;
 
     length = 0;
 
-    if (p_string == NULL)
+    if (p_string == nullptr)
     {
         return 0;
     }
@@ -63,13 +71,14 @@ size_t stdoc_strlen(const char *p_string)
     return length;
 }
 
-void *stdoc_memcpy(void *p_destination, const void *p_source, size_t length)
+extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
+                              std::size_t length)
 {
-    unsigned char *p_to;
+    unsigned char       *p_to;
     const unsigned char *p_from;
-    size_t index;
+    std::size_t          index;
 
-    if ((p_destination == NULL) || (p_source == NULL))
+    if ((p_destination == nullptr) || (p_source == nullptr))
     {
         return p_destination;
     }
@@ -84,8 +93,8 @@ void *stdoc_memcpy(void *p_destination, const void *p_source, size_t length)
         return p_destination;
     }
 
-    p_to   = (unsigned char *)p_destination;
-    p_from = (const unsigned char *)p_source;
+    p_to = static_cast<unsigned char *>(p_destination);
+    p_from = static_cast<const unsigned char *>(p_source);
 
     for (index = 0; index < length; index = index + 1)
     {
@@ -95,22 +104,25 @@ void *stdoc_memcpy(void *p_destination, const void *p_source, size_t length)
     return p_destination;
 }
 
-void *stdoc_memset(void *p_destination, int value, size_t length)
+extern "C" void *stdoc_memset(void *p_destination, int value,
+                              std::size_t length)
 {
     unsigned char *p_to;
-    size_t index;
+    std::size_t    index;
 
-    if (p_destination == NULL)
+    if (p_destination == nullptr)
     {
         return p_destination;
     }
 
-    p_to = (unsigned char *)p_destination;
+    p_to = static_cast<unsigned char *>(p_destination);
 
     for (index = 0; index < length; index = index + 1)
     {
-        p_to[index] = (unsigned char)value;
+        p_to[index] = static_cast<unsigned char>(value);
     }
 
     return p_destination;
 }
+
+} /* namespace stdoc::io */
