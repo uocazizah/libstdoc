@@ -29,14 +29,19 @@
  * if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "stdoc_io.h"
+#include <cstdarg>
 
-int stdoc_printf(const char *format, ...)
+#include "stdoc_io.hxx"
+
+namespace stdoc::io
+{
+
+extern "C" int stdoc_printf(const char *format, ...)
 {
     va_list args;
     int     count;
 
-    if (format == NULL)
+    if (format == nullptr)
     {
         return -1;
     }
@@ -65,3 +70,5 @@ int stdoc_printf(const char *format, ...)
 
     return count;
 }
+
+} /* namespace stdoc::io */
