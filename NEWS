@@ -11,7 +11,7 @@ yet.
 Bug fixes
 ~~~~~~~~~
 
-  * io/syscall_linux.c: a system call that completed a transfer of 4096
+  * io/syscall_linux.cxx: a system call that completed a transfer of 4096
     bytes or more was reported as a failure.  The raw kernel result was
     classified by comparing it, as an unsigned integer, against 4096 -
     the magnitude of the smallest kernel error rather than the error
@@ -33,17 +33,17 @@ Bug fixes
 Library
 ~~~~~~~
 
-  * io/heap.c: a release now merges the free neighbours in the single
+  * mem/heap.cxx: a release now merges the free neighbours in the single
     walk that finds the block, instead of walking the arena a second
     time.  The list keeps one invariant - no two adjacent blocks are
     free - which makes the merge a local operation; a release is
     therefore roughly a third faster in a loop of allocations and
     releases over a full arena, and the walk validates both neighbours
     before it writes anything.
-  * io/file.c: stdoc_stream_write copies payloads into the staging
+  * io/file.cxx: stdoc_stream_write copies payloads into the staging
     buffer block by block and scans only the newly staged bytes for a
     newline, so a large write no longer copies the same bytes twice.
-  * io/vfprintf.c: the padding chunk is filled once per call instead of
+  * io/vfprintf.cxx: the padding chunk is filled once per call instead of
     once per character.  "%p" now honours the '+' and ' ' flags the way
     the reference C library does, printing "+0x1234" and " 0x1234" for
     a non-null pointer and holding no sign for "(nil)".
@@ -53,9 +53,43 @@ Library
     built.  The header documents that "%+p" is accepted by the
     functions while "-Wformat" reports it, and how to quiet that one
     diagnostic.
-  * io/stdoc_io.h: stdoc_sys_read and stdoc_sys_close are documented as
-    the platform layer of the input release that stdoc_stdin is waiting
-    for, rather than left looking like dead code.
+  * include/stdoc_io.hxx: stdoc_sys_read and stdoc_sys_close are
+    documented as the platform layer of the input release that
+    stdoc_stdin is waiting for, rather than left looking like dead
+    code.
+  * The implementation moved from ISO C17 to ISO C++23.  Every file
+    under io/ and mem/ is now a .cxx translation unit built as C++23
+    inside the stdoc namespace, with scoped enumerations, "constexpr"
+    and "static_assert" in place of macros and a "constinit" guarantee
+    on the stream objects and the heap arena: an object that would need
+    dynamic initialization is rejected while the library is compiled,
+    which is exactly what the freestanding entry point requires, since
+    it runs no constructors and walks no ".init_array".  The public
+    interface is unchanged: include/libstdoc.h is still ISO C17, every
+    exported function keeps its name, signature and C linkage, and
+    every structure layout is the same.
+  * include/stdoc_io.hxx and include/stdoc_mem.hxx replace the internal
+    headers io/stdoc_io.h and mem/stdoc_mem.h.  They are still ISO C17
+    on purpose - the C tests include them - they guard their
+    declarations with "extern "C"", and they are not installed.
+  * The library implements Linux on x86_64 as well as Linux on
+    aarch64.  The new assembly/start_x86_64.S is the program entry
+    point of the target: it loads argc, argv and envp, aligns the stack
+    to a multiple of 16 bytes before the call, as the System V AMD64
+    ABI requires, and hands main's return value to stdoc_sys_exit.  The
+    new assembly/syscall_x86_64.S is the system-call trampoline, which
+    permutes the argument registers into the kernel's convention
+    (number in rax, fourth argument in r10 because "syscall" destroys
+    rcx, sixth argument on the stack).  io/syscall_linux.cxx chooses
+    the system-call numbers of the architecture the compiler targets -
+    close 3, read 0, write 1 and exit_group 231 on x86_64, alongside
+    the numbers already there for aarch64 - and refuses an
+    architecture without an entry instead of mapping it onto another
+    one's numbers.  The aarch64 trampoline moved from assembly/syscall.S
+    to assembly/syscall_aarch64.S, so the two files a target provides
+    are named the way assembly/start_aarch64.S already was.  The
+    public interface is untouched: the entry point still calls the
+    unmangled "main" symbol, and both targets export the same symbols.
 
 
 Build
@@ -76,17 +110,54 @@ Build
     message instead of failing later.  The value also reaches the test
     programs now, so a test is never built against a different arena
     from the library it links.
-  * A new CI workflow (.github/workflows/ci.yml) builds and tests under
-    GNU C and Clang on an aarch64 runner, at the default arena size and
-    at the smallest one accepted, regenerates the format golden file
-    from the host C library and compares it, and checks that the
-    configuration guard rejects the values it documents as impossible.
+  * A new CI workflow
+    (.github/workflows/aarch64-linux-gnu-ubuntu-lts-24.04.yml) builds
+    and tests under GNU C and Clang on an aarch64 runner, at the
+    default arena size and at the smallest one accepted, regenerates
+    the format golden file from the host C library and compares it,
+    and checks that the configuration guard rejects the values it
+    documents as impossible.
+  * The architecture guard accepts x86_64 - and the amd64 and AMD64
+    spellings the same architecture arrives under - as well as aarch64
+    and its arm64 and ARM64 spellings.  The processor it selects names
+    the startup file and the system-call trampoline the archive is
+    built from, so a target that is not implemented still fails the
+    configure with a message instead of being given another one's
+    implementation.
+  * CMake 3.20 or newer is required - the first release that knows
+    C++23 - and the C++ compiler is no longer optional: the project
+    asks for the standard with target_compile_features and rejects a
+    compiler that does not provide it.  A configure-time probe compiles
+    the freestanding C++ headers the implementation includes
+    (<climits>, <cstdarg>, <cstddef>, <cstdint> under -ffreestanding
+    -fno-exceptions -fno-rtti) and fails with a message that names what
+    is missing; libstdc++ provides them from GCC 13 on, while libc++
+    and the MSVC standard library do not implement freestanding mode.
+  * The library is built with the C++ warning set - the C set minus
+    -Wstrict-prototypes and -Wmissing-prototypes, plus -Wold-style-cast,
+    -Wnon-virtual-dtor, -Woverloaded-virtual and
+    -Wzero-as-null-pointer-constant - and with -fno-exceptions,
+    -fno-rtti and -fno-threadsafe-statics added to the freestanding
+    flags it already used.  The C test programs keep the C set.
+  * The clang-tidy job checks the C++ implementation files as C++23 and
+    the remaining C files as C17, each with the warning flags of its
+    language.
+  * The x86_64 workflow
+    (.github/workflows/x86_64-linux-gnu-ubuntu-lts-24.04.yml) builds,
+    tests and verifies the x86_64 target on the x86_64 runner.  It
+    used to cross-compile aarch64 and run the suite through
+    qemu-user; now that both targets are implemented, each workflow
+    builds the architecture of its own runner, so the cross toolchain,
+    the emulator and the binfmt_misc registration are gone.  Its
+    architecture-guard job now refuses a configure for a processor
+    that is not implemented, and accepts the alias spellings of the
+    two that are, instead of refusing the host it runs on.
 
 
 Tests
 ~~~~~
 
-  * Thirteen tests under CTest, up from nine.
+  * Fourteen tests under CTest, up from nine.
   * test/differential.c compiles the same source once against the host C
     library and once against libstdoc and compares the two case by case
     - over two thousand combinations of flags, width and precision,
@@ -102,6 +173,16 @@ Tests
   * test/heap.c and test/heap_abort.c shape their scenarios from
     stdoc_heap_capacity instead of assuming an arena of a particular
     size, so they pass from 64 bytes upwards.
+  * A new archive_is_freestanding test inspects the built archive: every
+    undefined symbol has to be "main" or a "stdoc"-prefixed symbol of
+    the library, no exported symbol may carry a C++ mangled name, and
+    no member may contain an ".init_array", ".ctors", ".tdata" or
+    similar section.  A static library is never linked on its own, so
+    this is what proves the freestanding property for every member
+    instead of only for the members a particular link happens to need.
+  * The C++ compatibility test is still compiled as C++17, and it is
+    now always built: a C++ compiler is part of the required
+    toolchain.
 
 
 Documentation
@@ -119,6 +200,15 @@ Documentation
   * docs/testing states what is still not covered, including the retry
     for a short write and any architecture or operating system other
     than the one the project is built for.
+  * docs/repository, docs/building, docs/testing, docs/io, docs/heap
+    and docs/formatting record the new file names and the C++23
+    implementation, and docs/building states the toolchain the project
+    now needs: CMake 3.20 or newer, a C++23 compiler and a standard
+    library that supports freestanding mode.
+  * README, docs/building, docs/testing, docs/io, docs/repository and
+    the installed pkg-config description now name both targets, and
+    describe the two entry points, the two system-call trampolines and
+    the two CI workflows instead of the single aarch64 implementation.
 
 
 1.0.0-beta
