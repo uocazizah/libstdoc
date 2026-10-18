@@ -39,28 +39,53 @@
  * the kernel did not take, so a short write reaches the layer above as
  * a success that really did write everything it was given.
  *
- * Target: Linux on aarch64 (the generic Linux system-call ABI, where
- * the number is carried in x8, arguments in x0..x5 and the result in
- * x0).  Other operating systems and architectures must provide their
- * own file and are rejected at configuration time rather than being
- * silently mapped onto these numbers.
+ * Target: Linux, for the architectures the build accepts (aarch64 and
+ * x86_64).  The system-call numbers are chosen from the compiler's own
+ * target below, and an architecture without an entry there fails the
+ * compilation instead of being silently mapped onto numbers that
+ * belong to another one.  How the kernel is entered - which registers
+ * carry the number, the arguments and the result - belongs to the
+ * assembly trampolines (assembly/syscall_aarch64.S and
+ * assembly/syscall_x86_64.S); this file sees a plain C function.
+ *
+ * The public wrappers carry the C linkage the internal header
+ * declares, so the C tests can call them under their unmangled names.
  */
 
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
-#include "stdoc_io.h"
+#include "stdoc_io.hxx"
+
+namespace stdoc::io
+{
+
+namespace
+{
 
 /*
- * Linux system-call numbers for aarch64.
+ * Linux system-call numbers for the target architecture.
  *
  * They are numeric on purpose: no "<asm/unistd.h>" or other kernel
  * header is consulted, so the build has no dependency outside this
- * repository.
+ * repository.  The numbers follow the compiler's target, so a
+ * translation unit compiled for an architecture without an entry here
+ * is rejected by the "#error" rather than given the numbers of the
+ * other one.
  */
-#define STDOC_SYS_CLOSE  57L
-#define STDOC_SYS_READ   63L
-#define STDOC_SYS_WRITE  64L
-#define STDOC_SYS_EXIT_GROUP 94L
+#if defined(__aarch64__)
+constexpr long syscall_close = 57L;
+constexpr long syscall_read = 63L;
+constexpr long syscall_write = 64L;
+constexpr long syscall_exit_group = 94L;
+#elif defined(__x86_64__)
+constexpr long syscall_close = 3L;
+constexpr long syscall_read = 0L;
+constexpr long syscall_write = 1L;
+constexpr long syscall_exit_group = 231L;
+#else
+#error "libstdoc: no Linux system-call numbers for this architecture"
+#endif
 
 /*
  * Lowest value the kernel uses to report a failure.
@@ -72,7 +97,7 @@
  * buffer is one number as ordinary as a write of four bytes - which
  * is what lets a single comparison classify both.
  */
-#define STDOC_KERNEL_ERROR_FLOOR (-4095L)
+constexpr long kernel_error_floor = -4095L;
 
 /*
  * Translate a raw kernel result into the 0 / -1 convention, optionally
@@ -91,24 +116,26 @@
  * comparison is done on the unsigned representation so that it is well
  * defined for every long value, including negative ones.
  */
-static int stdoc_kernel_result(long result, size_t *p_count)
+int stdoc_kernel_result(long result, std::size_t *p_count)
 {
     unsigned long magnitude;
 
-    magnitude = (unsigned long)result;
+    magnitude = static_cast<unsigned long>(result);
 
-    if (magnitude >= (unsigned long)STDOC_KERNEL_ERROR_FLOOR)
+    if (magnitude >= static_cast<unsigned long>(kernel_error_floor))
     {
         return -1;
     }
 
-    if (p_count != NULL)
+    if (p_count != nullptr)
     {
-        *p_count = (size_t)result;
+        *p_count = static_cast<std::size_t>(result);
     }
 
     return 0;
 }
+
+} /* namespace */
 
 /*
  * Write "length" bytes, repeating the system call for whatever the
@@ -123,30 +150,34 @@ static int stdoc_kernel_result(long result, size_t *p_count)
  * as a failure instead of being retried: it would otherwise repeat
  * forever without the write ever making progress.
  */
-int stdoc_sys_write(int fd, const void *p_buffer, size_t length)
+extern "C" int stdoc_sys_write(int fd, const void *p_buffer,
+                               std::size_t length)
 {
     const unsigned char *p_bytes;
-    size_t               offset;
-    size_t               remaining;
+    std::size_t          offset;
+    std::size_t          remaining;
 
-    if ((p_buffer == NULL) && (length != 0))
+    if ((p_buffer == nullptr) && (length != 0))
     {
         return -1;
     }
 
-    p_bytes = (const unsigned char *)p_buffer;
+    p_bytes = static_cast<const unsigned char *>(p_buffer);
     offset = 0;
     remaining = length;
 
     while (remaining > 0)
     {
-        size_t written;
+        std::size_t    written;
+        std::uintptr_t address;
 
-        if (stdoc_kernel_result(stdoc_syscall(
-                                    STDOC_SYS_WRITE, (long)fd,
-                                    (long)(uintptr_t)(p_bytes + offset),
-                                    (long)remaining, 0L, 0L, 0L),
-                                &written) != 0)
+        address = reinterpret_cast<std::uintptr_t>(p_bytes + offset);
+
+        if (stdoc_kernel_result(
+                stdoc_syscall(syscall_write, static_cast<long>(fd),
+                              static_cast<long>(address),
+                              static_cast<long>(remaining), 0L, 0L, 0L),
+                &written) != 0)
         {
             return -1;
         }
@@ -181,48 +212,52 @@ int stdoc_sys_write(int fd, const void *p_buffer, size_t length)
  * this interface until the input layer needs it, rather than being
  * exposed now for a caller that does not exist.
  */
-int stdoc_sys_read(int fd, void *p_buffer, size_t length)
+extern "C" int stdoc_sys_read(int fd, void *p_buffer, std::size_t length)
 {
     long result;
 
-    if ((p_buffer == NULL) && (length != 0))
+    if ((p_buffer == nullptr) && (length != 0))
     {
         return -1;
     }
 
-    result = stdoc_syscall(STDOC_SYS_READ, (long)fd,
-                           (long)(uintptr_t)p_buffer, (long)length,
-                           0L, 0L, 0L);
+    result = stdoc_syscall(
+        syscall_read, static_cast<long>(fd),
+        static_cast<long>(reinterpret_cast<std::uintptr_t>(p_buffer)),
+        static_cast<long>(length), 0L, 0L, 0L);
 
-    return stdoc_kernel_result(result, NULL);
+    return stdoc_kernel_result(result, nullptr);
 }
 
-int stdoc_sys_close(int fd)
+extern "C" int stdoc_sys_close(int fd)
 {
     long result;
 
-    result = stdoc_syscall(STDOC_SYS_CLOSE, (long)fd, 0L, 0L, 0L, 0L, 0L);
+    result = stdoc_syscall(syscall_close, static_cast<long>(fd), 0L, 0L,
+                           0L, 0L, 0L);
 
-    return stdoc_kernel_result(result, NULL);
+    return stdoc_kernel_result(result, nullptr);
 }
 
-void stdoc_sys_exit(int status)
+extern "C" void stdoc_sys_exit(int status)
 {
     /*
      * exit_group is used rather than exit so that every thread of the
      * process is terminated; libstdoc does not create threads, but a
      * program linked against it may.
-     */
-    (void)stdoc_syscall(STDOC_SYS_EXIT_GROUP, (long)status, 0L, 0L,
-                        0L, 0L, 0L);
-
-    /*
-     * The system call never returns.  The loop below only satisfies
-     * the compiler that this function does not fall through, and
-     * guards against a kernel that somehow resumes execution.
+     *
+     * The system call never returns.  Repeating it rather than
+     * spinning keeps the function's promise - the process ends here -
+     * even on a kernel that somehow resumed execution, and gives the
+     * compiler an external call to reason about, so the loop cannot be
+     * mistaken for one that has no observable behaviour.
      */
     for (;;)
     {
-        /* spin */
+        static_cast<void>(
+            stdoc_syscall(syscall_exit_group, static_cast<long>(status),
+                          0L, 0L, 0L, 0L, 0L));
     }
 }
+
+} /* namespace stdoc::io */
