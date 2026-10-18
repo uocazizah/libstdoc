@@ -32,15 +32,25 @@
 #define STDOC_MEM_H
 
 /*
- * Internal interface of the libstdoc heap (mem/heap.c).
+ * Internal interface of the libstdoc heap (mem/heap.cxx).
  *
  * Nothing declared here is part of the public API.  The public
  * allocation functions live in "<libstdoc.h>"; this header only
  * carries the sizing knob and the accounting that the tests use to
  * prove that no allocation is left behind.
+ *
+ * The declarations are wrapped in an "extern "C"" specification so
+ * that the C++23 implementation defines them with the same linkage the
+ * declarations promise, and the header itself is kept ISO C17 so that
+ * the C test programs can include it too: the heap tests use the
+ * accounting below to prove that every allocation was released.
  */
 
 #include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * Size of the heap arena, in bytes.
@@ -72,5 +82,9 @@ size_t stdoc_heap_live_blocks(void);
  * merging of free blocks is proven after everything was released.
  */
 size_t stdoc_heap_capacity(void);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* STDOC_MEM_H */
