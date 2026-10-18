@@ -38,7 +38,7 @@
  * specification to be marshalled through a second interface.
  *
  * Everything this file needs from the platform is the stream interface
- * and the heap, declared in "stdoc_io.h" and "<libstdoc.h>", so the
+ * and the heap, declared in "stdoc_io.hxx" and "<libstdoc.h>", so the
  * file compiles unchanged on any target that provides them.
  *
  * The scratch buffers of the formatting engine are borrowed from the
@@ -53,42 +53,71 @@
  * never names.  The behaviour of the call is undefined by the standard
  * from that point on; emitting nothing is the least surprising choice
  * here.
+ *
+ * "stdoc_vfprintf" carries the C linkage the internal header declares,
+ * so stdoc_printf and stdoc_fprintf reach it under its unmangled name.
  */
 
-#include <limits.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <climits>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
 
-#include "stdoc_io.h"
+#include "stdoc_io.hxx"
+
+namespace stdoc::io
+{
+
+namespace
+{
 
 /*
  * Flags of a conversion specification, as a bitmask.
  */
-#define STDOC_FLAG_LEFT   0x01u
-#define STDOC_FLAG_PLUS   0x02u
-#define STDOC_FLAG_SPACE  0x04u
-#define STDOC_FLAG_ALT    0x08u
-#define STDOC_FLAG_ZERO   0x10u
+enum class flag : unsigned int
+{
+    left  = 0x01U,
+    plus  = 0x02U,
+    space = 0x04U,
+    alt   = 0x08U,
+    zero  = 0x10U
+};
+
+/*
+ * The specification keeps its flags in one unsigned word, so the two
+ * operators below combine a word with a flag and test one.
+ */
+constexpr unsigned int operator|(unsigned int flags, flag value) noexcept
+{
+    return flags | static_cast<unsigned int>(value);
+}
+
+constexpr bool has_flag(unsigned int flags, flag value) noexcept
+{
+    return (flags & static_cast<unsigned int>(value)) != 0U;
+}
 
 /*
  * Length modifiers, in the order the parser matches them.
  */
-#define STDOC_LENGTH_NONE 0
-#define STDOC_LENGTH_HH   1
-#define STDOC_LENGTH_H    2
-#define STDOC_LENGTH_L    3
-#define STDOC_LENGTH_LL   4
-#define STDOC_LENGTH_Z    5
-#define STDOC_LENGTH_T    6
-#define STDOC_LENGTH_J    7
+enum class length_modifier
+{
+    none,
+    hh,
+    h,
+    l,
+    ll,
+    z,
+    t,
+    j
+};
 
 /*
  * Worst-case digits of a uintmax_t value written in binary: 64 digits
  * plus the terminating null.  Base 8, 10 and 16 all need fewer, so the
  * buffer is always large enough regardless of the conversion.
  */
-#define STDOC_DIGIT_STORAGE 65
+constexpr std::size_t digit_storage = 65;
 
 /*
  * Size of the chunk used to stage a run of padding characters, and
@@ -100,17 +129,17 @@
  * stack buffers of the same size, so an exhausted heap costs stack
  * space rather than correctness.
  */
-#define STDOC_SCRATCH_CHUNK 32
-#define STDOC_SCRATCH_SIZE  (STDOC_DIGIT_STORAGE + STDOC_SCRATCH_CHUNK)
+constexpr std::size_t scratch_chunk = 32;
+constexpr std::size_t scratch_size = digit_storage + scratch_chunk;
 
 /*
  * The stream, the running character count and the sticky failure flag
  * of one formatted call.  All output helpers take this so that a
  * single failure stops the whole call without further system calls.
  *
- * "p_scratch" is the STDOC_SCRATCH_SIZE byte block borrowed for the
- * call: the first STDOC_DIGIT_STORAGE bytes are the digit storage of
- * output_number, the remaining STDOC_SCRATCH_CHUNK bytes are the
+ * "p_scratch" is the scratch_size byte block borrowed for the
+ * call: the first digit_storage bytes are the digit storage of
+ * output_number, the remaining scratch_chunk bytes are the
  * padding chunk of output_repeat.  The two regions are never needed
  * at the same address, so one block serves both.  A null pointer
  * means the heap had no block to spare and every helper falls back to
@@ -124,41 +153,41 @@
  * no padding character can be: padding is only ever a space or a
  * zero.
  */
-typedef struct stdoc_output
+struct stdoc_output
 {
     stdoc_FILE *stream;
     int         count;
-    int         failed;
+    bool        failed;
     char       *p_scratch;
     char       *p_chunk;
     char        chunk_value;
-    int         scratch_from_heap;
-} stdoc_output;
+    bool        scratch_from_heap;
+};
 
 /*
  * One parsed conversion specification.
  */
-typedef struct stdoc_spec
+struct stdoc_spec
 {
-    unsigned int flags;
-    int          width;
-    int          precision;
-    int          length;
-    char         conversion;
-} stdoc_spec;
+    unsigned int    flags;
+    int             width;
+    int             precision;
+    length_modifier length;
+    char            conversion;
+};
 
 /*
  * Give the borrowed scratch block back.  Every path out of
  * stdoc_vfprintf calls this, so a formatted call can never leave the
  * heap holding a block.
  */
-static void output_release_scratch(stdoc_output *p_output)
+void output_release_scratch(stdoc_output *p_output)
 {
-    if (p_output->scratch_from_heap != 0)
+    if (p_output->scratch_from_heap)
     {
         stdoc_free(p_output->p_scratch);
-        p_output->p_scratch = NULL;
-        p_output->scratch_from_heap = 0;
+        p_output->p_scratch = nullptr;
+        p_output->scratch_from_heap = false;
     }
 }
 
@@ -167,10 +196,10 @@ static void output_release_scratch(stdoc_output *p_output)
  * INT_MAX before anything is written so that the documented return
  * type can never overflow.
  */
-static void output_write(stdoc_output *p_output, const char *p_bytes,
-                         size_t length)
+void output_write(stdoc_output *p_output, const char *p_bytes,
+                  std::size_t length)
 {
-    if (p_output->failed != 0)
+    if (p_output->failed)
     {
         return;
     }
@@ -180,19 +209,19 @@ static void output_write(stdoc_output *p_output, const char *p_bytes,
         return;
     }
 
-    if (length > (size_t)(INT_MAX - p_output->count))
+    if (length > static_cast<std::size_t>(INT_MAX - p_output->count))
     {
-        p_output->failed = 1;
+        p_output->failed = true;
         return;
     }
 
     if (stdoc_stream_write(p_output->stream, p_bytes, length) != 0)
     {
-        p_output->failed = 1;
+        p_output->failed = true;
         return;
     }
 
-    p_output->count = p_output->count + (int)length;
+    p_output->count = p_output->count + static_cast<int>(length);
 }
 
 /*
@@ -205,9 +234,9 @@ static void output_write(stdoc_output *p_output, const char *p_bytes,
  * the spaces that are already there, and only a change of character -
  * which happens when a conversion pads with zeros - costs a refill.
  */
-static void output_repeat(stdoc_output *p_output, char value, size_t count)
+void output_repeat(stdoc_output *p_output, char value, std::size_t count)
 {
-    size_t index;
+    std::size_t index;
 
     if (count == 0)
     {
@@ -216,7 +245,7 @@ static void output_repeat(stdoc_output *p_output, char value, size_t count)
 
     if (p_output->chunk_value != value)
     {
-        for (index = 0; index < STDOC_SCRATCH_CHUNK; index = index + 1)
+        for (index = 0; index < scratch_chunk; index = index + 1)
         {
             p_output->p_chunk[index] = value;
         }
@@ -224,10 +253,10 @@ static void output_repeat(stdoc_output *p_output, char value, size_t count)
         p_output->chunk_value = value;
     }
 
-    while (count >= STDOC_SCRATCH_CHUNK)
+    while (count >= scratch_chunk)
     {
-        output_write(p_output, p_output->p_chunk, STDOC_SCRATCH_CHUNK);
-        count = count - STDOC_SCRATCH_CHUNK;
+        output_write(p_output, p_output->p_chunk, scratch_chunk);
+        count = count - scratch_chunk;
     }
 
     if (count > 0)
@@ -242,19 +271,20 @@ static void output_repeat(stdoc_output *p_output, char value, size_t count)
  * Negative or zero width means "no padding".  The '-' flag aligns to
  * the left, which turns the padding into trailing spaces.
  */
-static void output_field(stdoc_output *p_output, const char *p_text,
-                         size_t length, const stdoc_spec *p_spec)
+void output_field(stdoc_output *p_output, const char *p_text,
+                  std::size_t length, const stdoc_spec *p_spec)
 {
-    size_t padding;
-    size_t field_width;
-    int    left;
+    std::size_t padding;
+    std::size_t field_width;
+    bool        left;
 
     padding = 0;
-    left = ((p_spec->flags & STDOC_FLAG_LEFT) != 0) ? 1 : 0;
+    left = has_flag(p_spec->flags, flag::left);
 
-    if ((p_spec->width > 0) && ((size_t)p_spec->width > length))
+    if ((p_spec->width > 0) &&
+        (static_cast<std::size_t>(p_spec->width) > length))
     {
-        padding = (size_t)p_spec->width - length;
+        padding = static_cast<std::size_t>(p_spec->width) - length;
     }
 
     /*
@@ -263,20 +293,20 @@ static void output_field(stdoc_output *p_output, const char *p_text,
      */
     field_width = length + padding;
 
-    if (field_width >= (size_t)(INT_MAX - p_output->count))
+    if (field_width >= static_cast<std::size_t>(INT_MAX - p_output->count))
     {
-        p_output->failed = 1;
+        p_output->failed = true;
         return;
     }
 
-    if (left == 0)
+    if (!left)
     {
         output_repeat(p_output, ' ', padding);
     }
 
     output_write(p_output, p_text, length);
 
-    if (left != 0)
+    if (left)
     {
         output_repeat(p_output, ' ', padding);
     }
@@ -287,7 +317,7 @@ static void output_field(stdoc_output *p_output, const char *p_text,
  * the address of the first digit, storing its length in "*p_length".
  *
  * The caller supplies the storage because the digit count depends on
- * the base.  At least STDOC_DIGIT_STORAGE bytes must be available.
+ * the base.  At least digit_storage bytes must be available.
  * Division and modulus by 8, 10 and 16 are compiled to ordinary
  * arithmetic on aarch64, so no compiler runtime helper is required.
  *
@@ -297,16 +327,16 @@ static void output_field(stdoc_output *p_output, const char *p_text,
  * would read past the digits into whatever the previous call left
  * there.
  */
-static const char *render_integer(uintmax_t value, unsigned int base,
-                                  int uppercase, char *p_storage,
-                                  size_t storage_size, size_t *p_length)
+const char *render_integer(std::uintmax_t value, unsigned int base,
+                           bool uppercase, char *p_storage,
+                           std::size_t storage_size, std::size_t *p_length)
 {
-    static const char lower_digits[] = "0123456789abcdef";
-    static const char upper_digits[] = "0123456789ABCDEF";
+    static constexpr char lower_digits[] = "0123456789abcdef";
+    static constexpr char upper_digits[] = "0123456789ABCDEF";
     const char *p_digits;
-    size_t      index;
+    std::size_t index;
 
-    p_digits = (uppercase != 0) ? upper_digits : lower_digits;
+    p_digits = uppercase ? upper_digits : lower_digits;
     index = storage_size;
 
     if (value == 0)
@@ -343,25 +373,25 @@ static const char *render_integer(uintmax_t value, unsigned int base,
  * and placed after the sign, which is what makes "%-8.4d" and
  * "%08.4d" differ only in alignment.
  */
-static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
-                          uintmax_t magnitude, int negative,
-                          unsigned int base, int uppercase)
+void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
+                   std::uintmax_t magnitude, bool negative,
+                   unsigned int base, bool uppercase)
 {
-    char        fallback_storage[STDOC_DIGIT_STORAGE];
+    char        fallback_storage[digit_storage];
     char       *p_storage;
     char        sign;
     const char *p_digits;
     const char *p_prefix;
-    size_t      digit_count;
-    size_t      zero_count;
-    size_t      sign_count;
-    size_t      prefix_count;
-    size_t      total;
-    size_t      padding;
-    size_t      field_width;
-    int         left;
-    int         zero_pad;
-    int         allow_sign;
+    std::size_t digit_count;
+    std::size_t zero_count;
+    std::size_t sign_count;
+    std::size_t prefix_count;
+    std::size_t total;
+    std::size_t padding;
+    std::size_t field_width;
+    bool        left;
+    bool        zero_pad;
+    bool        allow_sign;
 
     /*
      * The digits are rendered into the head of the scratch block when
@@ -369,8 +399,8 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
      * when it did not.  The padding chunk of output_repeat lives past
      * the end of this region, so the two never overlap.
      */
-    p_storage = (p_output->p_scratch != NULL) ? p_output->p_scratch
-                                              : fallback_storage;
+    p_storage = (p_output->p_scratch != nullptr) ? p_output->p_scratch
+                                                 : fallback_storage;
 
     if ((p_spec->precision == 0) && (magnitude == 0))
     {
@@ -380,7 +410,7 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     else
     {
         p_digits = render_integer(magnitude, base, uppercase, p_storage,
-                                  STDOC_DIGIT_STORAGE, &digit_count);
+                                  digit_storage, &digit_count);
     }
 
     /*
@@ -390,9 +420,9 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
      */
     zero_count = 0;
     if ((p_spec->precision >= 0) &&
-        ((size_t)p_spec->precision > digit_count))
+        (static_cast<std::size_t>(p_spec->precision) > digit_count))
     {
-        zero_count = (size_t)p_spec->precision - digit_count;
+        zero_count = static_cast<std::size_t>(p_spec->precision) - digit_count;
     }
 
     /*
@@ -410,23 +440,21 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
      */
     sign_count = 0;
     sign = ' ';
-    allow_sign = ((p_spec->conversion == 'd') ||
-                  (p_spec->conversion == 'i') ||
-                  (p_spec->conversion == 'p')) ? 1 : 0;
+    allow_sign = (p_spec->conversion == 'd') ||
+                 (p_spec->conversion == 'i') ||
+                 (p_spec->conversion == 'p');
 
-    if (negative != 0)
+    if (negative)
     {
         sign = '-';
         sign_count = 1;
     }
-    else if ((allow_sign != 0) &&
-             ((p_spec->flags & STDOC_FLAG_PLUS) != 0))
+    else if (allow_sign && has_flag(p_spec->flags, flag::plus))
     {
         sign = '+';
         sign_count = 1;
     }
-    else if ((allow_sign != 0) &&
-             ((p_spec->flags & STDOC_FLAG_SPACE) != 0))
+    else if (allow_sign && has_flag(p_spec->flags, flag::space))
     {
         sign = ' ';
         sign_count = 1;
@@ -440,12 +468,11 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     p_prefix = "";
     prefix_count = 0;
 
-    if ((p_spec->conversion == 'x') ||
-        (p_spec->conversion == 'X'))
+    if ((p_spec->conversion == 'x') || (p_spec->conversion == 'X'))
     {
-        if (((p_spec->flags & STDOC_FLAG_ALT) != 0) && (magnitude != 0))
+        if (has_flag(p_spec->flags, flag::alt) && (magnitude != 0))
         {
-            p_prefix = (uppercase != 0) ? "0X" : "0x";
+            p_prefix = uppercase ? "0X" : "0x";
             prefix_count = 2;
         }
     }
@@ -456,7 +483,7 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     }
     else if (p_spec->conversion == 'o')
     {
-        if (((p_spec->flags & STDOC_FLAG_ALT) != 0) && (zero_count == 0) &&
+        if (has_flag(p_spec->flags, flag::alt) && (zero_count == 0) &&
             ((digit_count == 0) || (p_digits[0] != '0')))
         {
             p_prefix = "0";
@@ -467,9 +494,10 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
     total = sign_count + prefix_count + zero_count + digit_count;
 
     padding = 0;
-    if ((p_spec->width > 0) && ((size_t)p_spec->width > total))
+    if ((p_spec->width > 0) &&
+        (static_cast<std::size_t>(p_spec->width) > total))
     {
-        padding = (size_t)p_spec->width - total;
+        padding = static_cast<std::size_t>(p_spec->width) - total;
     }
 
     /*
@@ -481,29 +509,29 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
      */
     field_width = total + padding;
 
-    if (field_width >= (size_t)(INT_MAX - p_output->count))
+    if (field_width >= static_cast<std::size_t>(INT_MAX - p_output->count))
     {
-        p_output->failed = 1;
+        p_output->failed = true;
         return;
     }
 
-    left = ((p_spec->flags & STDOC_FLAG_LEFT) != 0) ? 1 : 0;
+    left = has_flag(p_spec->flags, flag::left);
 
     /*
      * The '0' flag pads with zeros, but only when no precision was
      * given and the field is not left-aligned.  In that case the
      * width padding and the precision zeros form a single run.
      */
-    zero_pad = 0;
-    if ((left == 0) && ((p_spec->flags & STDOC_FLAG_ZERO) != 0) &&
+    zero_pad = false;
+    if (!left && has_flag(p_spec->flags, flag::zero) &&
         (p_spec->precision < 0))
     {
-        zero_pad = 1;
+        zero_pad = true;
     }
 
-    if (left == 0)
+    if (!left)
     {
-        if (zero_pad != 0)
+        if (zero_pad)
         {
             zero_count = zero_count + padding;
             padding = 0;
@@ -534,7 +562,7 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
         output_write(p_output, p_digits, digit_count);
     }
 
-    if ((left != 0) && (padding != 0))
+    if (left && (padding != 0))
     {
         output_repeat(p_output, ' ', padding);
     }
@@ -554,7 +582,7 @@ static void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
  *
  * Returns 0 on success and -1 when the digits did not fit.
  */
-static int parse_decimal(const char **pp_format, int *p_value)
+int parse_decimal(const char **pp_format, int *p_value)
 {
     const char   *p_cursor;
     unsigned long accumulator;
@@ -567,32 +595,32 @@ static int parse_decimal(const char **pp_format, int *p_value)
     while ((*p_cursor >= '0') && (*p_cursor <= '9'))
     {
         accumulator = (accumulator * 10UL) +
-                      (unsigned long)(*p_cursor - '0');
+                      static_cast<unsigned long>(*p_cursor - '0');
 
-        if (accumulator > (unsigned long)INT_MAX)
+        if (accumulator > static_cast<unsigned long>(INT_MAX))
         {
             overflow = 1;
-            accumulator = (unsigned long)INT_MAX;
+            accumulator = static_cast<unsigned long>(INT_MAX);
         }
 
         p_cursor = p_cursor + 1;
     }
 
     *pp_format = p_cursor;
-    *p_value = (int)accumulator;
+    *p_value = static_cast<int>(accumulator);
 
     return (overflow != 0) ? -1 : 0;
 }
 
-static int is_flag_character(char value)
+constexpr bool is_flag_character(char value) noexcept
 {
-    return ((value == '-') || (value == '+') || (value == ' ') ||
-            (value == '#') || (value == '0')) ? 1 : 0;
+    return (value == '-') || (value == '+') || (value == ' ') ||
+           (value == '#') || (value == '0');
 }
 
-static int is_digit_character(char value)
+constexpr bool is_digit_character(char value) noexcept
 {
-    return ((value >= '0') && (value <= '9')) ? 1 : 0;
+    return (value >= '0') && (value <= '9');
 }
 
 /*
@@ -601,40 +629,44 @@ static int is_digit_character(char value)
  * "value + 1" is evaluated before the negation so that the most
  * negative value of the type does not overflow when negated.
  */
-static void normalize_signed(intmax_t value, uintmax_t *p_magnitude,
-                             int *p_negative)
+void normalize_signed(std::intmax_t value, std::uintmax_t *p_magnitude,
+                      bool *p_negative)
 {
     if (value < 0)
     {
-        *p_negative = 1;
-        *p_magnitude = (uintmax_t)(-(value + 1)) + (uintmax_t)1;
+        *p_negative = true;
+        *p_magnitude = static_cast<std::uintmax_t>(-(value + 1)) +
+                       static_cast<std::uintmax_t>(1);
     }
     else
     {
-        *p_negative = 0;
-        *p_magnitude = (uintmax_t)value;
+        *p_negative = false;
+        *p_magnitude = static_cast<std::uintmax_t>(value);
     }
 }
 
-int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
-{
-    stdoc_output  output;
-    stdoc_spec    spec;
-    const char   *p_format;
-    char          chunk_storage[STDOC_SCRATCH_CHUNK];
-    size_t        run_length;
-    uintmax_t     magnitude;
-    int           negative;
-    int           value;
+} /* namespace */
 
-    if ((stream == NULL) || (format == NULL))
+extern "C" int stdoc_vfprintf(stdoc_FILE *stream, const char *format,
+                              va_list args)
+{
+    stdoc_output   output;
+    stdoc_spec     spec;
+    const char    *p_format;
+    char           chunk_storage[scratch_chunk];
+    std::size_t    run_length;
+    std::uintmax_t magnitude;
+    bool           negative;
+    int            value;
+
+    if ((stream == nullptr) || (format == nullptr))
     {
         return -1;
     }
 
     output.stream = stream;
     output.count = 0;
-    output.failed = 0;
+    output.failed = false;
 
     /*
      * Borrow the scratch block for the whole call.  A null result is
@@ -642,22 +674,22 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
      * the same size, so an exhausted heap costs stack space rather
      * than a failed conversion.
      */
-    output.p_scratch = stdoc_malloc(STDOC_SCRATCH_SIZE);
-    output.scratch_from_heap = (output.p_scratch != NULL) ? 1 : 0;
+    output.p_scratch = static_cast<char *>(stdoc_malloc(scratch_size));
+    output.scratch_from_heap = (output.p_scratch != nullptr);
 
     /*
      * The padding chunk lives in the borrowed block when there is one,
      * and in the frame of this call otherwise, so that it survives for
      * as long as the call does and no helper has to prepare it again.
      */
-    output.p_chunk = (output.p_scratch != NULL)
-                         ? output.p_scratch + STDOC_DIGIT_STORAGE
+    output.p_chunk = (output.p_scratch != nullptr)
+                         ? output.p_scratch + digit_storage
                          : chunk_storage;
     output.chunk_value = 0;
 
     p_format = format;
     magnitude = 0;
-    negative = 0;
+    negative = false;
 
     while (*p_format != '\0')
     {
@@ -683,31 +715,31 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
             break;
         }
 
-        spec.flags = 0;
+        spec.flags = 0U;
         spec.width = 0;
         spec.precision = -1;
-        spec.length = STDOC_LENGTH_NONE;
+        spec.length = length_modifier::none;
         spec.conversion = '\0';
 
         /* Flags: any order, and any number of repetitions. */
-        while (is_flag_character(*p_format) != 0)
+        while (is_flag_character(*p_format))
         {
             switch (*p_format)
             {
                 case '-':
-                    spec.flags = spec.flags | STDOC_FLAG_LEFT;
+                    spec.flags = spec.flags | flag::left;
                     break;
                 case '+':
-                    spec.flags = spec.flags | STDOC_FLAG_PLUS;
+                    spec.flags = spec.flags | flag::plus;
                     break;
                 case ' ':
-                    spec.flags = spec.flags | STDOC_FLAG_SPACE;
+                    spec.flags = spec.flags | flag::space;
                     break;
                 case '#':
-                    spec.flags = spec.flags | STDOC_FLAG_ALT;
+                    spec.flags = spec.flags | flag::alt;
                     break;
                 default:
-                    spec.flags = spec.flags | STDOC_FLAG_ZERO;
+                    spec.flags = spec.flags | flag::zero;
                     break;
             }
 
@@ -727,7 +759,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                  * width.  INT_MIN has no positive counterpart, so it
                  * saturates rather than overflowing on negation.
                  */
-                spec.flags = spec.flags | STDOC_FLAG_LEFT;
+                spec.flags = spec.flags | flag::left;
                 spec.width = (value == INT_MIN) ? INT_MAX : -value;
             }
             else
@@ -735,7 +767,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                 spec.width = value;
             }
         }
-        else if (is_digit_character(*p_format) != 0)
+        else if (is_digit_character(*p_format))
         {
             if (parse_decimal(&p_format, &spec.width) != 0)
             {
@@ -776,12 +808,12 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
 
             if (*p_format == 'h')
             {
-                spec.length = STDOC_LENGTH_HH;
+                spec.length = length_modifier::hh;
                 p_format = p_format + 1;
             }
             else
             {
-                spec.length = STDOC_LENGTH_H;
+                spec.length = length_modifier::h;
             }
         }
         else if (*p_format == 'l')
@@ -790,27 +822,27 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
 
             if (*p_format == 'l')
             {
-                spec.length = STDOC_LENGTH_LL;
+                spec.length = length_modifier::ll;
                 p_format = p_format + 1;
             }
             else
             {
-                spec.length = STDOC_LENGTH_L;
+                spec.length = length_modifier::l;
             }
         }
         else if (*p_format == 'z')
         {
-            spec.length = STDOC_LENGTH_Z;
+            spec.length = length_modifier::z;
             p_format = p_format + 1;
         }
         else if (*p_format == 't')
         {
-            spec.length = STDOC_LENGTH_T;
+            spec.length = length_modifier::t;
             p_format = p_format + 1;
         }
         else if (*p_format == 'j')
         {
-            spec.length = STDOC_LENGTH_J;
+            spec.length = length_modifier::j;
             p_format = p_format + 1;
         }
 
@@ -833,93 +865,119 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                  */
                 switch (spec.length)
                 {
-                    case STDOC_LENGTH_HH:
-                        normalize_signed((intmax_t)(signed char)va_arg(args, int),
-                                         &magnitude, &negative);
+                    case length_modifier::hh:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(
+                                static_cast<signed char>(va_arg(args, int))),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_H:
-                        normalize_signed((intmax_t)(short)va_arg(args, int),
-                                         &magnitude, &negative);
+                    case length_modifier::h:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(
+                                static_cast<short>(va_arg(args, int))),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_L:
-                        normalize_signed((intmax_t)va_arg(args, long),
-                                         &magnitude, &negative);
+                    case length_modifier::l:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(va_arg(args, long)),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_LL:
-                        normalize_signed((intmax_t)va_arg(args, long long),
-                                         &magnitude, &negative);
+                    case length_modifier::ll:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(
+                                va_arg(args, long long)),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_Z:
-                        normalize_signed((intmax_t)va_arg(args, long),
-                                         &magnitude, &negative);
+                    case length_modifier::z:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(va_arg(args, long)),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_T:
-                        normalize_signed((intmax_t)va_arg(args, ptrdiff_t),
-                                         &magnitude, &negative);
+                    case length_modifier::t:
+                        normalize_signed(
+                            static_cast<std::intmax_t>(
+                                va_arg(args, std::ptrdiff_t)),
+                            &magnitude, &negative);
                         break;
-                    case STDOC_LENGTH_J:
-                        normalize_signed(va_arg(args, intmax_t),
+                    case length_modifier::j:
+                        normalize_signed(va_arg(args, std::intmax_t),
                                          &magnitude, &negative);
                         break;
                     default:
-                        normalize_signed((intmax_t)va_arg(args, int),
-                                         &magnitude, &negative);
+                        normalize_signed(
+                            static_cast<std::intmax_t>(va_arg(args, int)),
+                            &magnitude, &negative);
                         break;
                 }
 
                 spec.conversion = 'd';
-                output_number(&output, &spec, magnitude, negative, 10u, 0);
+                output_number(&output, &spec, magnitude, negative, 10U,
+                              false);
                 break;
 
             case 'u':
             case 'o':
             case 'x':
             case 'X':
-                negative = 0;
+                negative = false;
 
                 switch (spec.length)
                 {
-                    case STDOC_LENGTH_HH:
-                        magnitude = (uintmax_t)(unsigned char)va_arg(args, unsigned int);
+                    case length_modifier::hh:
+                        magnitude = static_cast<std::uintmax_t>(
+                            static_cast<unsigned char>(
+                                va_arg(args, unsigned int)));
                         break;
-                    case STDOC_LENGTH_H:
-                        magnitude = (uintmax_t)(unsigned short)va_arg(args, unsigned int);
+                    case length_modifier::h:
+                        magnitude = static_cast<std::uintmax_t>(
+                            static_cast<unsigned short>(
+                                va_arg(args, unsigned int)));
                         break;
-                    case STDOC_LENGTH_L:
-                        magnitude = (uintmax_t)va_arg(args, unsigned long);
+                    case length_modifier::l:
+                        magnitude = static_cast<std::uintmax_t>(
+                            va_arg(args, unsigned long));
                         break;
-                    case STDOC_LENGTH_LL:
-                        magnitude = (uintmax_t)va_arg(args, unsigned long long);
+                    case length_modifier::ll:
+                        magnitude = static_cast<std::uintmax_t>(
+                            va_arg(args, unsigned long long));
                         break;
-                    case STDOC_LENGTH_Z:
-                        magnitude = (uintmax_t)va_arg(args, size_t);
+                    case length_modifier::z:
+                        magnitude = static_cast<std::uintmax_t>(
+                            va_arg(args, std::size_t));
                         break;
-                    case STDOC_LENGTH_T:
-                        magnitude = (uintmax_t)va_arg(args, ptrdiff_t);
+                    case length_modifier::t:
+                        magnitude = static_cast<std::uintmax_t>(
+                            va_arg(args, std::ptrdiff_t));
                         break;
-                    case STDOC_LENGTH_J:
-                        magnitude = (uintmax_t)va_arg(args, uintmax_t);
+                    case length_modifier::j:
+                        magnitude =
+                            va_arg(args, std::uintmax_t);
                         break;
                     default:
-                        magnitude = (uintmax_t)va_arg(args, unsigned int);
+                        magnitude = static_cast<std::uintmax_t>(
+                            va_arg(args, unsigned int));
                         break;
                 }
 
                 if (spec.conversion == 'u')
                 {
-                    output_number(&output, &spec, magnitude, 0, 10u, 0);
+                    output_number(&output, &spec, magnitude, false, 10U,
+                                  false);
                 }
                 else if (spec.conversion == 'o')
                 {
-                    output_number(&output, &spec, magnitude, 0, 8u, 0);
+                    output_number(&output, &spec, magnitude, false, 8U,
+                                  false);
                 }
                 else if (spec.conversion == 'X')
                 {
-                    output_number(&output, &spec, magnitude, 0, 16u, 1);
+                    output_number(&output, &spec, magnitude, false, 16U,
+                                  true);
                 }
                 else
                 {
-                    output_number(&output, &spec, magnitude, 0, 16u, 0);
+                    output_number(&output, &spec, magnitude, false, 16U,
+                                  false);
                 }
                 break;
 
@@ -929,17 +987,18 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
 
                 p_pointer = va_arg(args, const void *);
 
-                if (p_pointer == NULL)
+                if (p_pointer == nullptr)
                 {
                     output_field(&output, "(nil)", 5, &spec);
                 }
                 else
                 {
                     spec.conversion = 'p';
-                    magnitude = (uintmax_t)(uintptr_t)p_pointer;
-                    negative = 0;
+                    magnitude = static_cast<std::uintmax_t>(
+                        reinterpret_cast<std::uintptr_t>(p_pointer));
+                    negative = false;
                     output_number(&output, &spec, magnitude, negative,
-                                  16u, 0);
+                                  16U, false);
                 }
                 break;
             }
@@ -948,7 +1007,7 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
             {
                 char character;
 
-                character = (char)va_arg(args, int);
+                character = static_cast<char>(va_arg(args, int));
                 output_field(&output, &character, 1, &spec);
                 break;
             }
@@ -956,11 +1015,11 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
             case 's':
             {
                 const char *p_string;
-                size_t      length;
+                std::size_t length;
 
                 p_string = va_arg(args, const char *);
 
-                if (p_string == NULL)
+                if (p_string == nullptr)
                 {
                     /*
                      * Passing a null pointer to %s is undefined
@@ -973,7 +1032,8 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                      * implementation.
                      */
                     if ((spec.precision >= 0) &&
-                        (spec.precision < (int)(sizeof "(null)" - 1)))
+                        (spec.precision <
+                         static_cast<int>(sizeof "(null)" - 1)))
                     {
                         p_string = "";
                         length = 0;
@@ -1001,7 +1061,8 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
                     }
                     else
                     {
-                        while ((length < (size_t)spec.precision) &&
+                        while ((length <
+                                static_cast<std::size_t>(spec.precision)) &&
                                (p_string[length] != '\0'))
                         {
                             length = length + 1;
@@ -1025,10 +1086,12 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args)
 
     output_release_scratch(&output);
 
-    if (output.failed != 0)
+    if (output.failed)
     {
         return -1;
     }
 
     return output.count;
 }
+
+} /* namespace stdoc::io */
