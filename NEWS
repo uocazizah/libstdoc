@@ -1,11 +1,19 @@
 libstdoc news
 ===============
 
-unreleased
+2.0.0-beta
 ----------
 
-Changes made after the 1.0.0-beta release.  Nothing here is released
-yet.
+Released 18 October 2026.
+
+This is a major release.  The implementation moved from ISO C17 to ISO
+C++23 and Linux on x86_64 joined Linux on aarch64, so what builds the
+library changed: CMake 3.20 or newer, a C++23 compiler and a standard
+library with freestanding mode.  The public interface is unchanged -
+include/libstdoc.h is still ISO C17, every exported function keeps its
+name, signature and C linkage, and every structure layout is the same -
+so a program that links the archive needs no change.  This entry
+records everything since the 1.0.0-beta release.
 
 
 Bug fixes
@@ -209,6 +217,14 @@ Documentation
     the installed pkg-config description now name both targets, and
     describe the two entry points, the two system-call trampolines and
     the two CI workflows instead of the single aarch64 implementation.
+
+
+Version
+~~~~~~~
+
+  * The package version is 2.0.0.  CMake versions carry no suffix, so
+    the beta status of this release is recorded here in NEWS rather
+    than in libstdoc.pc or the CMake package version.
 
 
 1.0.0-beta
