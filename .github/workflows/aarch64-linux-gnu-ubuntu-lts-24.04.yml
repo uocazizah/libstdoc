@@ -1,12 +1,11 @@
-# libstdoc - build, test and verify on the target the library implements
+# libstdoc - build, test and verify on an aarch64 runner
 #
-# The only target this library implements is Linux on aarch64, so this
-# is the workflow that builds it natively: the runner is an aarch64
-# machine and what it builds is what the library claims to support.
-# The companion workflow for an x86_64 host
-# (x86_64-linux-gnu-ubuntu-lts-24.04.yml) cross-compiles the same
-# sources and runs the same suite under emulation, because a build of
-# this library for x86_64 does not exist to test.
+# The library implements Linux on aarch64 and Linux on x86_64.  This is
+# the workflow that builds and runs the aarch64 target: the runner is
+# an aarch64 machine, so what it builds is what the library claims to
+# support there, and nothing is cross-compiled.  The companion workflow
+# (x86_64-linux-gnu-ubuntu-lts-24.04.yml) does the same for x86_64 on
+# an x86_64 runner.
 #
 # Three things are checked here.  The build and the test suite run under
 # both compilers and at the arena sizes that matter at the boundary.
@@ -14,6 +13,9 @@
 # reference C library and compared, so it can never drift into being a
 # snapshot of whatever libstdoc itself now prints.  The configuration
 # guard is checked to reject the arena sizes it documents as impossible.
+# The architecture guard is checked on the x86_64 side, where a
+# configure for another processor can be asked for without changing the
+# runner.
 
 name: build and test - native aarch64
 
