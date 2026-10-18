@@ -7,7 +7,7 @@
 #
 #     cmake -DEXECUTABLE=<program> -DSCENARIO=<name> -P CheckFatal.cmake
 #
-# 134 mirrors STDOC_HEAP_FATAL_STATUS in mem/heap.c: the conventional
+# 134 mirrors stdoc_heap_fatal_status in mem/heap.cxx: the conventional
 # status of an aborted process (128 + SIGABRT).
 
 execute_process(
