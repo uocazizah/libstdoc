@@ -31,8 +31,8 @@ formatting
 
 io
     Streams and their staging buffer, the operating-system layer with
-    its system-call numbers, and the two assembly files that talk to
-    the kernel.
+    its system-call numbers, and the assembly files that talk to the
+    kernel.
 
 heap
     The dynamic memory allocator: the arena, the block layout, the
@@ -55,7 +55,9 @@ Conventions used in these documents
 
   * Commands are run from the repository root unless stated
     otherwise.
-  * C source is ISO C17; assembly is GNU assembler (GAS) syntax.
+  * The public interface and the C test programs are ISO C17, and the
+    library implementation behind that interface is ISO C++23; assembly
+    is GNU assembler (GAS) syntax.
   * A document never overrides AGENTS.md or the public comments in
     "<libstdoc.h>".  When they disagree, the header is the contract:
     fix the document.
