@@ -40,7 +40,7 @@
  * testing.
  */
 
-#include "stdoc_io.h"
+#include "stdoc_io.hxx"
 
 static int failures;
 
