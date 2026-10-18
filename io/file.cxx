@@ -39,14 +39,28 @@
  * complete formatted call.  Flushing eagerly on those three events
  * keeps output ordered without any exit-time hook, which the
  * freestanding startup path does not provide.
+ *
+ * The stream objects and the pointers to them are "constinit": the
+ * freestanding startup path runs no constructors and walks no
+ * ".init_array", so anything that would need dynamic initialization
+ * must be rejected while the library is compiled instead of failing
+ * silently at run time.
  */
 
-#include "stdoc_io.h"
+#include <cstddef>
+
+#include "stdoc_io.hxx"
+
+namespace stdoc::io
+{
+
+namespace
+{
 
 /*
- * The three standard streams.  The pointers are const because a caller
- * may not rebind stdout to another object; the streams themselves are
- * ordinary mutable objects.
+ * The three standard streams.  The pointers to them are const because
+ * a caller may not rebind stdout to another object; the streams
+ * themselves are ordinary mutable objects.
  *
  * stderr is marked unbuffered so that it is never reordered with
  * respect to stdout: every write is pushed to the kernel as soon as it
@@ -54,42 +68,41 @@
  * unbuffered as well, for the opposite reason: nothing writes to it,
  * so a buffer it could never flush would be dead space in the object.
  */
-static stdoc_FILE stdoc_stream_stdin =
-{
+constinit stdoc_FILE stdoc_stream_stdin{
     0,   /* fd          */
     0,   /* error       */
     1,   /* unbuffered  */
     0,   /* length      */
-    { 0 }
+    {}   /* buffer      */
 };
 
-static stdoc_FILE stdoc_stream_stdout =
-{
+constinit stdoc_FILE stdoc_stream_stdout{
     1,   /* fd          */
     0,   /* error       */
     0,   /* buffered    */
     0,   /* length      */
-    { 0 }
+    {}   /* buffer      */
 };
 
-static stdoc_FILE stdoc_stream_stderr =
-{
+constinit stdoc_FILE stdoc_stream_stderr{
     2,   /* fd          */
     0,   /* error       */
     1,   /* unbuffered  */
     0,   /* length      */
-    { 0 }
+    {}   /* buffer      */
 };
 
-stdoc_FILE *const stdoc_stdin  = &stdoc_stream_stdin;
-stdoc_FILE *const stdoc_stdout = &stdoc_stream_stdout;
-stdoc_FILE *const stdoc_stderr = &stdoc_stream_stderr;
+} /* namespace */
 
-int stdoc_stream_flush(stdoc_FILE *stream)
+extern "C" constinit stdoc_FILE *const stdoc_stdin = &stdoc_stream_stdin;
+extern "C" constinit stdoc_FILE *const stdoc_stdout = &stdoc_stream_stdout;
+extern "C" constinit stdoc_FILE *const stdoc_stderr = &stdoc_stream_stderr;
+
+extern "C" int stdoc_stream_flush(stdoc_FILE *stream)
 {
-    size_t length;
+    std::size_t length;
 
-    if (stream == NULL)
+    if (stream == nullptr)
     {
         return -1;
     }
@@ -117,9 +130,9 @@ int stdoc_stream_flush(stdoc_FILE *stream)
     return 0;
 }
 
-void stdoc_stream_discard(stdoc_FILE *stream)
+extern "C" void stdoc_stream_discard(stdoc_FILE *stream)
 {
-    if (stream == NULL)
+    if (stream == nullptr)
     {
         return;
     }
@@ -137,21 +150,22 @@ void stdoc_stream_discard(stdoc_FILE *stream)
  * payload larger than the buffer is handled by repeated flushes rather
  * than by an oversized stack copy.
  */
-int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
+extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
+                                  std::size_t length)
 {
     const unsigned char *p_bytes;
-    size_t               remaining;
-    size_t               available;
-    size_t               taken;
-    size_t               index;
+    std::size_t          remaining;
+    std::size_t          available;
+    std::size_t          taken;
+    std::size_t          index;
     int                  newline;
 
-    if (stream == NULL)
+    if (stream == nullptr)
     {
         return -1;
     }
 
-    if ((p_buffer == NULL) && (length != 0))
+    if ((p_buffer == nullptr) && (length != 0))
     {
         stream->error = 1;
         return -1;
@@ -162,7 +176,7 @@ int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
         return -1;
     }
 
-    p_bytes = (const unsigned char *)p_buffer;
+    p_bytes = static_cast<const unsigned char *>(p_buffer);
     remaining = length;
 
     while (remaining > 0)
@@ -181,7 +195,8 @@ int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
 
         taken = (remaining < available) ? remaining : available;
 
-        (void)stdoc_memcpy(&stream->buffer[stream->length], p_bytes, taken);
+        static_cast<void>(stdoc_memcpy(&stream->buffer[stream->length],
+                                       p_bytes, taken));
         stream->length = stream->length + taken;
 
         /*
@@ -227,3 +242,5 @@ int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length)
 
     return 0;
 }
+
+} /* namespace stdoc::io */
