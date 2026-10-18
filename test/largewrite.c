@@ -59,7 +59,7 @@
 
 #include <stddef.h>
 
-#include "stdoc_io.h"
+#include "stdoc_io.hxx"
 
 #define PAYLOAD_SIZE 200000
 
