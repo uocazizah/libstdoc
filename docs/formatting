@@ -6,7 +6,12 @@ va_list, call stdoc_vfprintf, and then either discard what the call
 had staged (on failure, so that half of a conversion never reaches
 the output) or flush it (on success, because the freestanding startup
 path installs no exit handler and a buffer left dirty would never be
-written).  Everything else happens in io/vfprintf.c.
+written).  Everything else happens in io/vfprintf.cxx.
+
+The wrappers and the engine are C++23, but every function the headers
+declare is defined with C linkage, so the archive exports the same
+unmangled names it always did; the internal helpers of the engine live
+in an anonymous namespace.
 
 
 How one call flows
@@ -25,7 +30,7 @@ How one call flows
         +-- output_write / output_repeat / output_field / output_number
         |         |
         |         v
-        +-- stdoc_stream_write (io/file.c) -> staging buffer -> write(2)
+        +-- stdoc_stream_write (io/file.cxx) -> staging buffer -> write(2)
 
 Parser and formatter are kept in one translation unit on purpose: the
 specification has to be fully known before any byte is emitted, and
@@ -135,20 +140,20 @@ things make a call fail:
 Digits are rendered backwards into a scratch buffer from the end, so
 the storage is never read past the digits into whatever the previous
 call left there.  Division and modulus by 8, 10 and 16 are compiled to
-ordinary arithmetic on aarch64, so no compiler runtime helper is
-required - which matters because the library links with -nostdlib.
+ordinary arithmetic on both architectures this library implements, so
+no compiler runtime helper is required - which matters because the
+library links with -nostdlib.
 
 
 Scratch memory
 --------------
 
-Every call borrows one block of STDOC_SCRATCH_SIZE (65 + 32 = 97)
-bytes from the libstdoc heap: the first 65 bytes are the digit
-storage of output_number, the remaining 32 bytes are the padding
-chunk of output_repeat.  The two regions never overlap, and the block
-is released on every path out of stdoc_vfprintf, including the two
-failure paths of the parser, so a completed call leaves nothing
-allocated.
+Every call borrows one block of 97 bytes from the libstdoc heap: the
+first 65 bytes are the digit storage of output_number, the remaining
+32 bytes are the padding chunk of output_repeat.  The two regions
+never overlap, and the block is released on every path out of
+stdoc_vfprintf, including the two failure paths of the parser, so a
+completed call leaves nothing allocated.
 
 When the heap has no block to spare, the helpers fall back to stack
 buffers of the same size: an exhausted heap costs stack space rather
