@@ -1,10 +1,16 @@
 streams, system calls and assembly
 ==================================
 
-This document covers io/file.c, io/syscall_linux.c, io/string.c and
-the two files in assembly/.  Together they are the layer the rest of
-the library stands on: everything above them is portable C, everything
-here knows the operating system or the architecture.
+This document covers io/file.cxx, io/syscall_linux.cxx,
+io/string.cxx and the two files in assembly/.  Together they are the
+layer the rest of the library stands on: everything above them is
+portable C++23, everything here knows the operating system or the
+architecture.
+
+The sources are C++23, but every function the headers declare is
+defined with C linkage, so the archive exports the C interface and
+nothing else; the internal helpers live in an anonymous namespace and
+are invisible to a linker.
 
 
 The streams
@@ -62,16 +68,19 @@ fails without touching the system-call layer.
 The operating-system layer
 --------------------------
 
-io/syscall_linux.c is the only place where Linux system-call numbers
+io/syscall_linux.cxx is the only place where Linux system-call numbers
 and the "-errno in the return register" convention appear.  The
 numbers are written as plain constants - no "<asm/unistd.h>" or other
 kernel header is consulted, so the build has no dependency outside
-this repository:
+this repository - and the architecture picks them from the compiler's
+own target, so one without an entry is a compilation error rather than
+a silent mixture of two targets:
 
-    57    close
-    63    read
-    64    write
-    94    exit_group
+    aarch64    x86_64    call
+    57         3         close
+    63         0         read
+    64         1         write
+    94         231       exit_group
 
 The wrappers are stdoc_sys_write, stdoc_sys_read, stdoc_sys_close and
 stdoc_sys_exit.  The first three return 0 on success and -1 on
@@ -107,12 +116,16 @@ of the process is terminated.  libstdoc creates no threads, but a
 program linked against it may.  It never returns.
 
 
-The system-call trampoline (assembly/syscall.S)
------------------------------------------------
+The system-call trampolines (assembly/syscall_aarch64.S and
+assembly/syscall_x86_64.S)
+-------------------------------------------------------------------
 
-The Linux aarch64 system-call ABI differs from the ordinary C calling
-convention: the number is carried in x8 rather than x0, the arguments
-in x0..x5, and the result comes back in x0.  Arguments are passed in
+The Linux system-call ABI is not the ordinary C calling convention,
+and it is not the same on the two architectures this library
+implements, so each has a trampoline of its own.
+
+On aarch64 the number is carried in x8 rather than x0, the arguments
+in x0..x5 and the result comes back in x0.  Arguments are passed in
 the same registers the C convention uses, so the trampoline only has
 to shift every argument one register to the right, move the number
 into place and execute "svc #0":
@@ -123,29 +136,50 @@ into place and execute "svc #0":
                     svc #0
                     ret
 
+On x86_64 the number goes in rax, the result comes back in rax, the
+fourth argument goes in r10 - the "syscall" instruction destroys rcx,
+the register the C convention uses for that argument - and the sixth
+argument is passed on the stack.  The trampoline permutes the argument
+registers and then executes "syscall":
+
+    stdoc_syscall:  movq %r8, %r10       /* arg4, not rcx */
+                    movq %r9, %r8        /* arg5          */
+                    movq 8(%rsp), %r9    /* arg6          */
+                    movq %rdi, %rax      /* number        */
+                    movq %rsi, %rdi      /* arguments     */
+                    ...                  /* rsi, rdx      */
+                    syscall
+                    ret
+
 The raw kernel return value is returned unmodified, so callers
-interpret the "-4095 .. -1" range themselves.  Registers x19..x30 are
-preserved across the call as the C calling convention requires; the
-function touches only argument, result and status registers, so no
-explicit save or restore is needed.
+interpret the "-4095 .. -1" range themselves; the kernel reports a
+failure that way on both architectures.  Only registers the C calling
+convention already lets a function destroy are touched - x0..x18 on
+aarch64, and rax, rcx, rdx, rsi, rdi, r8, r9, r10 and r11 on x86_64 -
+so no explicit save or restore is needed.
 
 Written in GNU assembler (GAS) syntax, as the project conventions
 require.
 
 
-The entry point (assembly/start_aarch64.S)
-------------------------------------------
+The entry points (assembly/start_aarch64.S and
+assembly/start_x86_64.S)
+-------------------------------------------------
 
 The kernel enters _start with the initial stack layout:
 
-    sp        argc
-    sp + 8    argv[0], ..., argv[argc], NULL
-              envp[0], ..., NULL
+    sp / rsp        the top of the initial stack
+    [sp] / [rsp]    argc
+    sp / rsp + 8    argv[0], ..., argv[argc], NULL
+                    envp[0], ..., NULL
 
-_start clears the frame pointer and the link register so that a stack
-unwinder stops cleanly at the bottom of the stack, reads the three
-values, calls main(argc, argv, envp) and passes main's return value to
-stdoc_sys_exit, which becomes the exit status.
+start_aarch64.S clears the frame pointer (x29) and the link register
+(x30) so that a stack unwinder stops cleanly at the bottom of the
+stack, reads the three values, calls main(argc, argv, envp) and passes
+main's return value to stdoc_sys_exit, which becomes the exit status.
+start_x86_64.S does the same with the frame pointer (rbp), and aligns
+the stack to 16 bytes before the call, as the System V AMD64 ABI
+requires.
 
 There is deliberately no more here than the ABI requires: no
 constructors, no ".init_array" walk, no thread-local storage and no
@@ -154,8 +188,8 @@ this release, which is also why the formatted functions flush
 themselves instead of registering an exit-time flush.
 
 
-The string helpers (io/string.c)
---------------------------------
+The string helpers (io/string.cxx)
+----------------------------------
 
 stdoc_strlen, stdoc_memcpy and stdoc_memset live here because the
 library is linked with -nostdlib: it may not call those names from a
@@ -164,5 +198,5 @@ silently resolve to a different implementation than the one under
 test.  They are prefixed so they never collide when libstdoc is linked
 into a hosted program, and none of them is part of the public API.
 
-The heap allocator in mem/heap.c uses stdoc_memcpy to move block
+The heap allocator in mem/heap.cxx uses stdoc_memcpy to move block
 headers in and out of the arena; see docs/heap for why.
