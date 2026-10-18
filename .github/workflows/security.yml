@@ -10,12 +10,18 @@
 #
 # The static analyser plus the linter checks around it.  The sources are
 # given the include directories the build gives them and are parsed for
-# the host, which is enough here: the C code is portable and says
-# nothing about the architecture - that lives in the assembly files this
-# job does not read - so a check that would only make sense for one
-# target has nothing to find either way.
+# the host, which is enough here: the portable code says nothing about
+# the architecture - that lives in the assembly files this job does not
+# read - so a check that would only make sense for one target has
+# nothing to find either way.
 #
-# Three checks are switched off, each for a reason of its own:
+# The implementation is C++23 and the tests are C17, so the two groups
+# are parsed with the standard each is written in; parsing the C++
+# sources as C17 would report every namespace and every scoped
+# enumeration, and parsing the C tests as C++ would report the
+# prototype-less declarations they deliberately contain.
+#
+# Four checks are switched off, each for a reason of its own:
 #
 #   bugprone-easily-swappable-parameters
 #       Fires on any two adjacent parameters of convertible type, and
@@ -25,7 +31,7 @@
 #       reader to skim the output.
 #
 #   bugprone-branch-clone
-#       The length-modifier switches in io/vfprintf.c fetch the same
+#       The length-modifier switches in io/vfprintf.cxx fetch the same
 #       width through different casts on purpose - long for %ld, long
 #       long for %lld, intmax_t for %jd, size_t for %zu - so their
 #       bodies are meant to look alike.
@@ -36,11 +42,23 @@
 #       the start of a block, which is the only way to reach those
 #       paths.  The library itself never casts an integer to a pointer.
 #
-# "-Wno-format" is passed for the same reason the build passes it to the
-# conversion suite: those tests pin down conversions that a compiler
-# refuses, so the diagnostic has to be off for them.  The check is
-# doubled by the attribute on the public declarations, which stays on
-# everywhere else; see test/CMakeLists.txt.
+#   performance-enum-size
+#       Every scoped enumeration here is either a transient value that
+#       never leaves a register - the flags and the length modifier of a
+#       conversion - or a deliberate fixed-width field of the block
+#       header the allocator writes into the arena, whose layout is
+#       documented in mem/heap.cxx.  The check would shrink both by
+#       re-typing fields that were chosen for a reason, and nothing in
+#       the library stores an enumeration in an array where its width
+#       would matter.
+#
+# "-Wno-format" is passed to the C sources for the same reason the build
+# passes it to the conversion suite: those tests pin down conversions
+# that a compiler refuses, so the diagnostic has to be off for them.
+# The check is doubled by the attribute on the public declarations,
+# which stays on everywhere else; see test/CMakeLists.txt.  The C++
+# implementation is never parsed with the diagnostic off: it is
+# format-clean and is kept that way.
 #
 # flawfinder
 # ----------
@@ -86,17 +104,28 @@ jobs:
           sudo apt-get install --yes --no-install-recommends \
               clang-tidy flawfinder
 
-      # Every C file in the tree, the tests included: a test that
+      # Every source file in the tree, the tests included: a test that
       # mishandles a buffer is as much a defect as the library doing it.
       # "--warnings-as-errors" is what turns a finding into a failure;
       # without it clang-tidy reports and exits zero.
+      #
+      # The C++ sources are parsed as C++23 with the include directory
+      # the build gives them; the C sources - the tests - are parsed as
+      # C17 with the same directory, because the tests include the
+      # internal headers by name.
       - name: Analyse the sources with clang-tidy
         run: |
-          files=$(git ls-files '*.c')
+          checks='clang-analyzer-*,bugprone-*,cert-*,performance-*,portability-*,-bugprone-easily-swappable-parameters,-bugprone-branch-clone,-performance-no-int-to-ptr,-performance-enum-size'
+
           clang-tidy \
-              --checks='clang-analyzer-*,bugprone-*,cert-*,performance-*,portability-*,-bugprone-easily-swappable-parameters,-bugprone-branch-clone,-performance-no-int-to-ptr' \
-              --warnings-as-errors='*' $files -- \
-              -std=c17 -Iinclude -Iio -Imem -Wno-format
+              --checks="$checks" \
+              --warnings-as-errors='*' $(git ls-files '*.cxx') -- \
+              -std=c++23 -Iinclude
+
+          clang-tidy \
+              --checks="$checks" \
+              --warnings-as-errors='*' $(git ls-files '*.c') -- \
+              -std=c17 -Iinclude -Wno-format
 
       - name: Scan the sources with flawfinder
         run: |
