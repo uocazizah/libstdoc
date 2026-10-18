@@ -18,10 +18,10 @@
 cmake_minimum_required(VERSION 3.20)
 
 # The version is that of the library as a package.  The beta status of
-# this point in the history - 1.0.0-beta - is recorded in NEWS; CMake
+# this point in the history - 2.0.0-beta - is recorded in NEWS; CMake
 # versions carry no suffix, and the interface may still change before
-# the 1.0.0 final release.
-project(libstdoc VERSION 1.0.0 LANGUAGES C CXX ASM)
+# the 2.0.0 final release.
+project(libstdoc VERSION 2.0.0 LANGUAGES C CXX ASM)
 
 # The public interface is ISO C17 and so are the test programs that
 # consume it as C, so every C target in the project is compiled as C17
