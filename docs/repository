@@ -227,12 +227,12 @@ test/ - the test programs
 ---------------------
 
     dependabot.yml    Keeps the GitHub Actions dependencies updated.
-    workflows/aarch64-linux-gnu-ubuntu-lts-24.04.yml
+    workflows/aarch64-linux-gnu-ubuntu-lts-26.04.yml
                       Builds and tests the project on an aarch64
                       runner under both compilers, checks that the
                       format golden file still matches a reference C
                       library, and checks the configuration guard.
-    workflows/x86_64-linux-gnu-ubuntu-lts-24.04.yml
+    workflows/x86_64-linux-gnu-ubuntu-lts-26.04.yml
                       The same for x86_64, with a check that the
                       architecture guard refuses an architecture that
                       is not implemented in addition.
