@@ -122,24 +122,38 @@ void stdoc_sys_exit(int status) __attribute__((noreturn));
  * convention of the kernel.  The raw kernel return value is returned
  * unmodified, so callers must interpret negative values in the
  * "-4095 .. -1" range as errors.
+ *
+ * stdoc_syscall3 is the entry point the library uses for the calls
+ * that take at most three arguments - read, write, close and exit.  It
+ * performs the same translation as stdoc_syscall for those arguments,
+ * without moving the three registers the kernel would ignore.  The
+ * six-argument form is retained for a future call that needs them.
  */
 long stdoc_syscall(long number, long arg1, long arg2, long arg3,
                    long arg4, long arg5, long arg6);
 
+long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
+
 /*
  * Stream helpers (io/file.cxx).
  *
- * stdoc_stream_write stages "length" bytes into the stream buffer and
- * flushes it when full, when a newline is staged, or when the buffer
- * would otherwise be left dirty.  It returns 0 on success and -1 on
- * failure, and records the failure in the stream.
+ * stdoc_stream_write writes "length" bytes to the stream.  Small
+ * writes to a buffered stream are staged and flushed when the buffer
+ * fills, when a newline is staged, or (for an unbuffered stream) when
+ * the call finishes.  With nothing staged, an unbuffered stream or a
+ * payload larger than STDOC_BUFFER_SIZE goes directly to
+ * stdoc_sys_write, so it is not copied through the staging buffer.
+ * The function returns 0 on success and -1 on failure, and records the
+ * failure in the stream.
  *
  * stdoc_stream_flush pushes the staged bytes to the operating system
  * and clears the buffer.  It succeeds when nothing is staged.
  *
  * stdoc_stream_discard throws away the staged bytes without writing
  * them, which is what a failed call has to do so that half of a
- * conversion never reaches the output.
+ * conversion never reaches the output.  Bytes already written through
+ * the direct path have reached the operating system and are not
+ * affected.
  */
 int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length);
 int stdoc_stream_flush(stdoc_FILE *stream);
