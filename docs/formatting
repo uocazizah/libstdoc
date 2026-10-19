@@ -3,10 +3,14 @@ the formatting engine
 
 stdoc_printf and stdoc_fprintf are thin wrappers: they start a
 va_list, call stdoc_vfprintf, and then either discard what the call
-had staged (on failure, so that half of a conversion never reaches
+had staged (on failure, so that half of a conversion does not reach
 the output) or flush it (on success, because the freestanding startup
 path installs no exit handler and a buffer left dirty would never be
-written).  Everything else happens in io/vfprintf.cxx.
+written).  A write that went through the direct path in
+stdoc_stream_write has already reached the kernel and cannot be
+discarded; that path is only taken for an unbuffered stream or for a
+payload larger than the staging buffer, which could not be held back
+whole in any case.  Everything else happens in io/vfprintf.cxx.
 
 The wrappers and the engine are C++23, but every function the headers
 declare is defined with C linkage, so the archive exports the same
@@ -30,7 +34,10 @@ How one call flows
         +-- output_write / output_repeat / output_field / output_number
         |         |
         |         v
-        +-- stdoc_stream_write (io/file.cxx) -> staging buffer -> write(2)
+        +-- stdoc_stream_write (io/file.cxx)
+                  |
+                  +-- small buffered write -> staging buffer -> write(2)
+                  +-- large or unbuffered write ----------------> write(2)
 
 Parser and formatter are kept in one translation unit on purpose: the
 specification has to be fully known before any byte is emitted, and
