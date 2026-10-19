@@ -30,7 +30,7 @@
  */
 
 /*
- * Generic system-call trampoline for Linux on aarch64.
+ * System-call trampolines for Linux on aarch64.
  *
  * Written in GNU assembler (GAS) syntax, as required by the project
  * conventions.  The Linux system-call ABI for aarch64 differs from the
@@ -40,8 +40,14 @@
  * which means the trampoline only has to shift every argument one
  * register to the right and move the number into place.
  *
+ * The three-argument entry point is the one the library uses for read,
+ * write, close and exit: shifting three arguments instead of six saves
+ * three moves on every system call without changing the kernel ABI or
+ * the portable code above this layer.  The six-argument entry point
+ * remains for a future call that needs more registers.
+ *
  * Registers x19..x30 are preserved across the call as the C calling
- * convention requires; this function touches only the argument
+ * convention requires; these functions touch only the argument
  * registers, the result register and the status register, so no
  * explicit save or restore is needed.
  */
@@ -69,6 +75,24 @@ stdoc_syscall:
     svc     #0              /* invoke the kernel                      */
     ret                     /* result is already in x0                */
     .size   stdoc_syscall, .-stdoc_syscall
+
+/*
+ * long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
+ *
+ * On entry:  x0 = number, x1..x3 = arguments.
+ * On exit:   x0 = raw kernel result.
+ */
+    .align 2
+    .global stdoc_syscall3
+    .type   stdoc_syscall3, %function
+stdoc_syscall3:
+    mov     x8, x0          /* system-call number goes in x8          */
+    mov     x0, x1          /* shift the arguments into x0 .. x2      */
+    mov     x1, x2
+    mov     x2, x3
+    svc     #0              /* invoke the kernel                      */
+    ret                     /* result is already in x0                */
+    .size   stdoc_syscall3, .-stdoc_syscall3
 
 /*
  * Mark the stack as non-executable when the section is present.
