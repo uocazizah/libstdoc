@@ -93,7 +93,7 @@ jobs:
     name: clang-tidy and flawfinder
     # Neither tool needs the target architecture, an emulator or a
     # build, so this job runs on the ordinary x86_64 runner.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
