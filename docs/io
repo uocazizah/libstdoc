@@ -42,9 +42,9 @@ Staging
 -------
 
 The staging buffer lives inside the stream object, so staging output
-performs no allocation.  stdoc_stream_write stages bytes and hands
-them to the operating system in a single write when any of three
-events happens:
+performs no allocation.  For a payload that does go through the
+buffer, stdoc_stream_write hands the staged bytes to the operating
+system in a single write when any of three events happens:
 
   * the buffer is full,
   * a newline is staged (this is what keeps line-oriented output
@@ -52,8 +52,20 @@ events happens:
     path does not provide),
   * the write is to an unbuffered stream and the caller has finished.
 
-A payload larger than the buffer is handled by repeated flushes rather
-than by an oversized stack copy.
+A payload larger than the buffer is not copied through the staging
+buffer first.  When nothing is staged, stdoc_stream_write hands an
+unbuffered write, or a buffered payload larger than the buffer, to
+stdoc_sys_write in one call.  The wrapper already repeats a short write
+until the whole payload has been accepted, so the direct path neither
+loses bytes nor needs a stack copy of the payload.  On a buffered
+stream, a payload of exactly STDOC_BUFFER_SIZE bytes still fills the
+staging buffer, which keeps the documented "a full buffer stays staged"
+behaviour.
+
+The newline scan only looks at the bytes that were just staged, and it
+stops at the first newline; it never reads beyond the caller's length.
+The direct path needs no scan at all because it has no staged data to
+order against the bytes being written.
 
 stdoc_stream_flush pushes the staged bytes and clears the buffer; it
 succeeds when nothing is staged.  stdoc_stream_discard throws the
@@ -122,7 +134,12 @@ assembly/syscall_x86_64.S)
 
 The Linux system-call ABI is not the ordinary C calling convention,
 and it is not the same on the two architectures this library
-implements, so each has a trampoline of its own.
+implements, so each has a trampoline of its own.  Both architectures
+provide two entry points: stdoc_syscall takes six arguments, and
+stdoc_syscall3 takes three.  The platform layer uses the three-argument
+form for read, write, close and exit_group, which is every call it
+wraps; the six-argument form remains for a future call that needs more
+registers.
 
 On aarch64 the number is carried in x8 rather than x0, the arguments
 in x0..x5 and the result comes back in x0.  Arguments are passed in
@@ -130,11 +147,18 @@ the same registers the C convention uses, so the trampoline only has
 to shift every argument one register to the right, move the number
 into place and execute "svc #0":
 
-    stdoc_syscall:  mov x8, x0        /* number       */
-                    mov x0, x1        /* arguments    */
-                    ...               /* x0 .. x5     */
-                    svc #0
-                    ret
+    stdoc_syscall:   mov x8, x0       /* number       */
+                     mov x0, x1       /* arguments    */
+                     ...              /* x0 .. x5     */
+                     svc #0
+                     ret
+
+    stdoc_syscall3:  mov x8, x0       /* number       */
+                     mov x0, x1       /* arguments    */
+                     mov x1, x2       /* x0 .. x2     */
+                     mov x2, x3
+                     svc #0
+                     ret
 
 On x86_64 the number goes in rax, the result comes back in rax, the
 fourth argument goes in r10 - the "syscall" instruction destroys rcx,
@@ -142,14 +166,21 @@ the register the C convention uses for that argument - and the sixth
 argument is passed on the stack.  The trampoline permutes the argument
 registers and then executes "syscall":
 
-    stdoc_syscall:  movq %r8, %r10       /* arg4, not rcx */
-                    movq %r9, %r8        /* arg5          */
-                    movq 8(%rsp), %r9    /* arg6          */
-                    movq %rdi, %rax      /* number        */
-                    movq %rsi, %rdi      /* arguments     */
-                    ...                  /* rsi, rdx      */
-                    syscall
-                    ret
+    stdoc_syscall:   movq %r8, %r10      /* arg4, not rcx */
+                     movq %r9, %r8       /* arg5          */
+                     movq 8(%rsp), %r9   /* arg6          */
+                     movq %rdi, %rax     /* number        */
+                     movq %rsi, %rdi     /* arguments     */
+                     ...                 /* rsi, rdx      */
+                     syscall
+                     ret
+
+    stdoc_syscall3:  movq %rdi, %rax     /* number        */
+                     movq %rsi, %rdi     /* arguments     */
+                     movq %rdx, %rsi     /* rdi, rsi, rdx */
+                     movq %rcx, %rdx
+                     syscall
+                     ret
 
 The raw kernel return value is returned unmodified, so callers
 interpret the "-4095 .. -1" range themselves; the kernel reports a
@@ -177,9 +208,14 @@ start_aarch64.S clears the frame pointer (x29) and the link register
 (x30) so that a stack unwinder stops cleanly at the bottom of the
 stack, reads the three values, calls main(argc, argv, envp) and passes
 main's return value to stdoc_sys_exit, which becomes the exit status.
-start_x86_64.S does the same with the frame pointer (rbp), and aligns
-the stack to 16 bytes before the call, as the System V AMD64 ABI
-requires.
+The branch to the exit wrapper is a tail branch rather than a call,
+since the wrapper never returns: the stack stays 16-byte aligned and no
+return address is needed.  start_x86_64.S does the same with the frame
+pointer (rbp), and aligns the stack to 16 bytes before the call, as the
+System V AMD64 ABI requires.  It keeps the call rather than tail
+branching because, after main returns, %rsp is 16-byte aligned; the
+call makes stdoc_sys_exit enter with the 8-mod-16 alignment the System
+V ABI promises a called function.
 
 There is deliberately no more here than the ABI requires: no
 constructors, no ".init_array" walk, no thread-local storage and no
@@ -197,6 +233,18 @@ host C library, since they would either be missing at link time or
 silently resolve to a different implementation than the one under
 test.  They are prefixed so they never collide when libstdoc is linked
 into a hosted program, and none of them is part of the public API.
+
+stdoc_memcpy and stdoc_memset move sixteen bytes at a time through a
+local byte block.  The block is what lets the compiler emit wide loads
+and stores while the function keeps reading and writing only inside the
+caller's length; casting the pointers to a wider type would raise the
+alignment and aliasing questions the C++ object model does not let a
+byte copy answer.  A shorter tail is copied one byte at a time.
+
+stdoc_strlen walks the string one byte at a time and stops at the
+terminating null.  A word-at-a-time strlen could read past the null and
+outside the object, so it is deliberately not used even though it would
+scan faster.
 
 The heap allocator in mem/heap.cxx uses stdoc_memcpy to move block
 headers in and out of the arena; see docs/heap for why.
