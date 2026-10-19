@@ -4,7 +4,7 @@
 # the workflow that builds and runs the x86_64 target: the runner is an
 # x86_64 machine, so what it builds is what the library claims to
 # support there, without a cross compiler and without an emulator.  The
-# companion workflow (aarch64-linux-gnu-ubuntu-lts-24.04.yml) does the
+# companion workflow (aarch64-linux-gnu-ubuntu-lts-26.04.yml) does the
 # same for aarch64 on an aarch64 runner.
 #
 # Checked here are the build and the test suite under both compilers at
@@ -33,7 +33,7 @@ permissions:
 jobs:
   build-and-test:
     name: ${{ matrix.compiler }} with a ${{ matrix.heap_size }} byte arena
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +80,7 @@ jobs:
 
   golden-files:
     name: golden files match the reference C library
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -101,7 +101,7 @@ jobs:
 
   architecture-guard:
     name: the architecture guard accepts x86_64 and refuses the rest
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -116,17 +116,25 @@ jobs:
       # and the message has to name the one that was refused: a guard
       # that stopped the build with a message about something else
       # would leave the reader looking in the wrong place.
+      #
+      # Each processor gets a build directory of its own.  A failed
+      # configure still writes CMAKE_SYSTEM_PROCESSOR into its cache,
+      # and a second configure in the same directory would report the
+      # processor that directory first saw rather than the one it was
+      # just given.
       - name: Reject a configure for an architecture that is not implemented
         run: |
           for processor in i686 arm riscv64 ppc64le; do
-            if cmake -S . -B /tmp/rejected \
+            build_dir="/tmp/rejected-$processor"
+            log="/tmp/guard-$processor.log"
+            if cmake -S . -B "$build_dir" \
                 -DCMAKE_SYSTEM_NAME=Linux \
-                -DCMAKE_SYSTEM_PROCESSOR="$processor" > /tmp/guard.log 2>&1; then
+                -DCMAKE_SYSTEM_PROCESSOR="$processor" > "$log" 2>&1; then
               echo "a configure for $processor was accepted"
-              cat /tmp/guard.log
+              cat "$log"
               exit 1
             fi
-            grep -F "unsupported target architecture \"$processor\"" /tmp/guard.log
+            grep -F "unsupported target architecture \"$processor\"" "$log"
           done
 
       # x86_64 is not the only spelling this architecture arrives under.
