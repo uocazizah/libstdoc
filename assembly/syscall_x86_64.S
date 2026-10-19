@@ -30,7 +30,7 @@
  */
 
 /*
- * Generic system-call trampoline for Linux on x86_64.
+ * System-call trampolines for Linux on x86_64.
  *
  * Written in GNU assembler (GAS) syntax, as required by the project
  * conventions.  The Linux system-call ABI for x86_64 differs from the
@@ -42,8 +42,14 @@
  * trampoline therefore has to permute the argument registers as well
  * as move the number into place.
  *
+ * The three-argument entry point is the one the library uses for read,
+ * write, close and exit: it avoids the fourth, fifth and sixth argument
+ * moves, including the load from the stack, on every system call.  The
+ * six-argument entry point remains for a future call that needs more
+ * registers.
+ *
  * The C convention allows a function to destroy rax, rcx, rdx, rsi,
- * rdi, r8, r9, r10 and r11; this function touches nothing else, so no
+ * rdi, r8, r9, r10 and r11; these functions touch nothing else, so no
  * explicit save or restore is needed.
  */
 
@@ -72,6 +78,24 @@ stdoc_syscall:
     syscall                         /* invoke the kernel              */
     ret                             /* result is already in rax       */
     .size   stdoc_syscall, .-stdoc_syscall
+
+/*
+ * long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
+ *
+ * On entry:  rdi = number, rsi, rdx and rcx = the arguments.
+ * On exit:   rax = raw kernel result.
+ */
+    .align 4
+    .global stdoc_syscall3
+    .type   stdoc_syscall3, @function
+stdoc_syscall3:
+    movq    %rdi, %rax              /* system-call number goes in rax */
+    movq    %rsi, %rdi              /* shift the arguments into rdi,  */
+    movq    %rdx, %rsi              /* rsi and rdx                    */
+    movq    %rcx, %rdx
+    syscall                         /* invoke the kernel              */
+    ret                             /* result is already in rax       */
+    .size   stdoc_syscall3, .-stdoc_syscall3
 
 /*
  * Mark the stack as non-executable when the section is present.
