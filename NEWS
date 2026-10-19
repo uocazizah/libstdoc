@@ -1,6 +1,34 @@
 libstdoc news
 ===============
 
+unreleased
+----------
+
+Changes made after the 2.0.0-beta release.  Nothing here is released
+yet.
+
+
+Build
+~~~~~
+
+  * The two target workflows and the static-analysis job now run on
+    Ubuntu 26.04 LTS: ubuntu-26.04 on x86_64 and ubuntu-26.04-arm on
+    aarch64.  The two workflow files carry the release in their names
+    and are renamed from -ubuntu-lts-24.04.yml to -ubuntu-lts-26.04.yml
+    accordingly; docs/building and docs/repository follow.  The CodeQL
+    workflow names ubuntu-26.04 instead of ubuntu-latest, which GitHub
+    migrates to 26.04 during October and November 2026.
+  * .github/workflows/x86_64-linux-gnu-ubuntu-lts-26.04.yml: the
+    architecture guard gives every rejected processor a build
+    directory of its own.  The loop used one directory for all of
+    them, and a failed configure writes CMAKE_SYSTEM_PROCESSOR into
+    that directory's cache, so the second configure reported i686 -
+    the processor the first iteration tried - instead of the one it
+    was given, and the grep that requires the message to name that
+    processor failed.  The job failed this way at 5e5d72a; it now
+    passes for i686, arm, riscv64 and ppc64le.
+
+
 2.0.0-beta
 ----------
 
