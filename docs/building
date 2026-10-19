@@ -218,10 +218,10 @@ Continuous integration
 
 Two workflows build this library, each on a runner of the
 architecture it tests, so nothing there is cross-compiled:
-aarch64-linux-gnu-ubuntu-lts-24.04.yml runs on an aarch64 runner and
-x86_64-linux-gnu-ubuntu-lts-24.04.yml on an x86_64 one, both under
-.github/workflows/.  Each checks three things on every push and pull
-request:
+aarch64-linux-gnu-ubuntu-lts-26.04.yml runs on an aarch64 runner and
+x86_64-linux-gnu-ubuntu-lts-26.04.yml on an x86_64 one, both on Ubuntu
+26.04 LTS and under .github/workflows/.  Each checks three things on
+every push and pull request:
 
   * the build and the test suite under GNU C and under Clang, at the
     default arena size and at the smallest one the configuration
@@ -235,8 +235,8 @@ request:
     documents as impossible.
 
 The x86_64 workflow checks the architecture guard as well: a configure
-for a processor this library does not implement - i686, arm or riscv64
-- has to fail and name the processor it refused.
+for a processor this library does not implement - i686, arm, riscv64
+or ppc64le - has to fail and name the processor it refused.
 
 Every step the workflow runs can be run by hand with the commands in
 this document and in docs/testing.
