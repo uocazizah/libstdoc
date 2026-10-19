@@ -7,12 +7,13 @@
 # companion workflow (aarch64-linux-gnu-ubuntu-lts-26.04.yml) does the
 # same for aarch64 on an aarch64 runner.
 #
-# Checked here are the build and the test suite under both compilers at
-# the arena sizes that matter at the boundary, the golden file of the
-# conversion suite regenerated from a reference C library, and the
-# architecture guard.  The arena guard is checked by the companion
-# workflow instead, where an impossible arena is the only thing a
-# configure can fail on.
+# Checked here are the build and the test suite under both compilers,
+# with RelWithDebInfo for the ordinary rows and Debug for the
+# smallest-arena row, at the arena sizes that matter at the boundary,
+# the golden file of the conversion suite regenerated from a reference
+# C library, and the architecture guard.  The arena guard is checked by
+# the companion workflow instead, where an impossible arena is the only
+# thing a configure can fail on.
 
 name: build and test - native x86_64
 
@@ -32,7 +33,7 @@ permissions:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.compiler }} with a ${{ matrix.heap_size }} byte arena
+    name: ${{ matrix.compiler }} ${{ matrix.build_type }} with a ${{ matrix.heap_size }} byte arena
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
@@ -41,22 +42,28 @@ jobs:
           - compiler: gcc
             cc: gcc
             cxx: g++
+            build_type: RelWithDebInfo
             heap_size: 4096
           - compiler: clang
             cc: clang
             cxx: clang++
+            build_type: RelWithDebInfo
             heap_size: 4096
           # The smallest arena the build accepts.  Everything the
           # library does with the heap has to survive it, including the
-          # formatted calls that fall back to stack buffers.
+          # formatted calls that fall back to stack buffers.  This row
+          # also keeps the unoptimised build exercised, where a code
+          # path cannot hide behind the optimiser.
           - compiler: gcc
             cc: gcc
             cxx: g++
+            build_type: Debug
             heap_size: 64
           # An arena that holds a handful of blocks rather than one.
           - compiler: gcc
             cc: gcc
             cxx: g++
+            build_type: RelWithDebInfo
             heap_size: 192
     steps:
       - name: Checkout
@@ -70,6 +77,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_C_COMPILER=${{ matrix.cc }}
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DSTDOC_HEAP_SIZE=${{ matrix.heap_size }}
 
       - name: Build
