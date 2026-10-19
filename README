@@ -19,11 +19,11 @@ Project Status
 -----------------
 
 libstdoc is currently in the beta stage: the current release is
-1.0.0-beta (see NEWS).
+2.0.1-beta (see NEWS).
 
 The library is under active development and is not yet considered stable.
-standard library, library internals, and project structure may change
-frequently until the final 1.0.0 release.
+The standard library, the library internals and the project structure
+may change frequently until the final release.
 
 Repository Structure
 -----------------------
