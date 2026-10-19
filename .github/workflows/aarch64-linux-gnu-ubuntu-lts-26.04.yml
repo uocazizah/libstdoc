@@ -4,7 +4,7 @@
 # the workflow that builds and runs the aarch64 target: the runner is
 # an aarch64 machine, so what it builds is what the library claims to
 # support there, and nothing is cross-compiled.  The companion workflow
-# (x86_64-linux-gnu-ubuntu-lts-24.04.yml) does the same for x86_64 on
+# (x86_64-linux-gnu-ubuntu-lts-26.04.yml) does the same for x86_64 on
 # an x86_64 runner.
 #
 # Three things are checked here.  The build and the test suite run under
@@ -36,7 +36,7 @@ permissions:
 jobs:
   build-and-test:
     name: ${{ matrix.compiler }} with a ${{ matrix.heap_size }} byte arena
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +80,7 @@ jobs:
 
   golden-files:
     name: golden files match the reference C library
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -98,7 +98,7 @@ jobs:
 
   configuration-guard:
     name: the configuration guard rejects impossible arenas
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v7
