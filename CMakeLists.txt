@@ -18,10 +18,25 @@
 cmake_minimum_required(VERSION 3.20)
 
 # The version is that of the library as a package.  The beta status of
-# this point in the history - 2.0.0-beta - is recorded in NEWS; CMake
+# this point in the history - 2.0.1-beta - is recorded in NEWS; CMake
 # versions carry no suffix, and the interface may still change before
-# the 2.0.0 final release.
-project(libstdoc VERSION 2.0.0 LANGUAGES C CXX ASM)
+# the final release.
+project(libstdoc VERSION 2.0.1 LANGUAGES C CXX ASM)
+
+# A build without a chosen type gets no optimisation flags at all, which
+# is a poor default for a library whose release notes describe its
+# performance.  RelWithDebInfo keeps the ordinary -O2 code generation and
+# adds debug information, so a crash can still be read with a debugger;
+# an explicit -DCMAKE_BUILD_TYPE=Debug or Release overrides it.  A
+# multi-configuration generator chooses the type at build time instead,
+# so the cache variable does not apply there.
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+        "Build type: Debug, Release, RelWithDebInfo or MinSizeRel" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        Debug Release RelWithDebInfo MinSizeRel)
+    message(STATUS "libstdoc: no build type given; using RelWithDebInfo")
+endif()
 
 # The public interface is ISO C17 and so are the test programs that
 # consume it as C, so every C target in the project is compiled as C17
