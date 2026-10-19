@@ -36,9 +36,7 @@ Top-level entries
     LICENSE           The license overview and how to choose.
     LICENSES/         The full license texts and their explanation.
     mem/              The dynamic memory allocator (C++23).
-    NEWS              Release notes; the newest release is first, and
-                      the changes made since the last release are kept
-                      in a section of their own above it.
+    NEWS              Release notes, newest release first.
     README            The project overview and the license summary.
     test/             The test programs and their build rules.
     build/            A local, out-of-source build directory; it is
@@ -59,14 +57,17 @@ assembly/ - the runtime in assembly
     start_x86_64.S    The same for Linux on x86_64.  It also aligns
                       the stack to 16 bytes before the call, as the
                       System V AMD64 ABI requires.
-    syscall_aarch64.S The system-call trampoline for aarch64.  It
-                      converts the ordinary C calling convention into
+    syscall_aarch64.S The system-call trampolines for aarch64.  They
+                      convert the ordinary C calling convention into
                       the Linux system-call convention (number in x8,
                       arguments in x0..x5, result in x0) with a single
-                      "svc #0".  Documented in docs/io.
-    syscall_x86_64.S  The system-call trampoline for x86_64: the
-                      number goes in rax, the fourth argument in r10,
-                      and the kernel is entered with "syscall".
+                      "svc #0"; stdoc_syscall3 handles the calls that
+                      need at most three arguments.  Documented in
+                      docs/io.
+    syscall_x86_64.S  The same for x86_64: the number goes in rax, the
+                      fourth argument in r10, and the kernel is entered
+                      with "syscall"; stdoc_syscall3 avoids the moves
+                      for the arguments those calls do not have.
                       Documented in docs/io.
 
 
@@ -80,9 +81,12 @@ io/ - the input/output layer
     file.cxx          The three standard streams (stdoc_stdin,
                       stdoc_stdout, stdoc_stderr) and the staging
                       logic: stdoc_stream_write, stdoc_stream_flush
-                      and stdoc_stream_discard.  The stream objects are
-                      "constinit", so they need no dynamic
-                      initialization.  Documented in docs/io.
+                      and stdoc_stream_discard.  A write that starts
+                      with an empty buffer is handed to the kernel
+                      directly when the stream is unbuffered or the
+                      payload is larger than the staging buffer.  The
+                      stream objects are "constinit", so they need no
+                      dynamic initialization.  Documented in docs/io.
     vfprintf.cxx      The formatting engine, stdoc_vfprintf.  Parser
                       and formatter live in one translation unit.
                       Documented in docs/formatting.
@@ -97,7 +101,10 @@ io/ - the input/output layer
     string.cxx        The internal helpers stdoc_strlen, stdoc_memcpy
                       and stdoc_memset, which exist so that the
                       library links with "-nostdlib" without taking
-                      symbols from a host C library.
+                      symbols from a host C library.  The copy and
+                      fill helpers move sixteen bytes per iteration;
+                      the length helper stays byte-wise so it never
+                      reads past the terminator.
 
 
 mem/ - dynamic memory
@@ -229,9 +236,10 @@ test/ - the test programs
     dependabot.yml    Keeps the GitHub Actions dependencies updated.
     workflows/aarch64-linux-gnu-ubuntu-lts-26.04.yml
                       Builds and tests the project on an aarch64
-                      runner under both compilers, checks that the
-                      format golden file still matches a reference C
-                      library, and checks the configuration guard.
+                      runner under both compilers, adds an unoptimised
+                      Debug row, checks that the format golden file
+                      still matches a reference C library, and checks
+                      the configuration guard.
     workflows/x86_64-linux-gnu-ubuntu-lts-26.04.yml
                       The same for x86_64, with a check that the
                       architecture guard refuses an architecture that
@@ -250,9 +258,9 @@ Top-level files
 
     README            Project overview, repository structure and the
                       license summary.  Points here for details.
-    NEWS              Release notes; the unreleased changes are first,
-                      then 1.0.0-beta, which covers the history from
-                      the commit "major changes" to that release.
+    NEWS              Release notes, newest release first: 2.0.1-beta,
+                      2.0.0-beta and 1.0.0-beta, which covers the
+                      history from the commit "major changes" onward.
     ChangeLog         States that Git holds the detailed history.
     AUTHORS           The project founder, maintainer and developer.
     LICENSE           Explains the three licenses the recipient may
