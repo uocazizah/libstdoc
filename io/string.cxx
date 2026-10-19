@@ -54,29 +54,45 @@ namespace stdoc::io
 
 extern "C" std::size_t stdoc_strlen(const char *p_string)
 {
-    std::size_t length;
-
-    length = 0;
+    const char *p_cursor;
 
     if (p_string == nullptr)
     {
         return 0;
     }
 
-    while (p_string[length] != '\0')
+    /*
+     * A pointer walk lets the compiler use one post-incremented load
+     * per byte.  Reading a whole word would be faster still, but it
+     * could read past the terminating null and outside the object,
+     * which this library does not do.
+     */
+    p_cursor = p_string;
+
+    while (*p_cursor != '\0')
     {
-        length = length + 1;
+        p_cursor = p_cursor + 1;
     }
 
-    return length;
+    return static_cast<std::size_t>(p_cursor - p_string);
 }
 
 extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
                               std::size_t length)
 {
+    /*
+     * Sixteen bytes is the widest block every target this library
+     * supports can move with its baseline vector instructions, and it
+     * is also the size of one heap block header.  The block is moved
+     * through a local byte array so the compiler can combine the byte
+     * loads and stores into wider ones without either argument having
+     * to be cast to a wider type; the copy stays inside "length" and
+     * reads no byte past the end of the source.
+     */
+    constexpr std::size_t block_size = 16;
+
     unsigned char       *p_to;
     const unsigned char *p_from;
-    std::size_t          index;
 
     if ((p_destination == nullptr) || (p_source == nullptr))
     {
@@ -96,9 +112,32 @@ extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
     p_to = static_cast<unsigned char *>(p_destination);
     p_from = static_cast<const unsigned char *>(p_source);
 
-    for (index = 0; index < length; index = index + 1)
+    while (length >= block_size)
     {
-        p_to[index] = p_from[index];
+        unsigned char block[block_size];
+        std::size_t   index;
+
+        for (index = 0; index < block_size; index = index + 1)
+        {
+            block[index] = p_from[index];
+        }
+
+        for (index = 0; index < block_size; index = index + 1)
+        {
+            p_to[index] = block[index];
+        }
+
+        p_to = p_to + block_size;
+        p_from = p_from + block_size;
+        length = length - block_size;
+    }
+
+    while (length != 0)
+    {
+        *p_to = *p_from;
+        p_to = p_to + 1;
+        p_from = p_from + 1;
+        length = length - 1;
     }
 
     return p_destination;
@@ -107,8 +146,10 @@ extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
 extern "C" void *stdoc_memset(void *p_destination, int value,
                               std::size_t length)
 {
+    constexpr std::size_t block_size = 16;
+
     unsigned char *p_to;
-    std::size_t    index;
+    unsigned char  byte_value;
 
     if (p_destination == nullptr)
     {
@@ -116,10 +157,41 @@ extern "C" void *stdoc_memset(void *p_destination, int value,
     }
 
     p_to = static_cast<unsigned char *>(p_destination);
+    byte_value = static_cast<unsigned char>(value);
 
-    for (index = 0; index < length; index = index + 1)
+    /*
+     * Fill one block once and store it repeatedly.  As in
+     * stdoc_memcpy, the local byte array is what lets the compiler
+     * turn the loop into a wide store without a cast that would break
+     * the aliasing rules.
+     */
+    if (length >= block_size)
     {
-        p_to[index] = static_cast<unsigned char>(value);
+        unsigned char block[block_size];
+        std::size_t   index;
+
+        for (index = 0; index < block_size; index = index + 1)
+        {
+            block[index] = byte_value;
+        }
+
+        while (length >= block_size)
+        {
+            for (index = 0; index < block_size; index = index + 1)
+            {
+                p_to[index] = block[index];
+            }
+
+            p_to = p_to + block_size;
+            length = length - block_size;
+        }
+    }
+
+    while (length != 0)
+    {
+        *p_to = byte_value;
+        p_to = p_to + 1;
+        length = length - 1;
     }
 
     return p_destination;
