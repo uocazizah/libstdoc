@@ -174,9 +174,9 @@ extern "C" int stdoc_sys_write(int fd, const void *p_buffer,
         address = reinterpret_cast<std::uintptr_t>(p_bytes + offset);
 
         if (stdoc_kernel_result(
-                stdoc_syscall(syscall_write, static_cast<long>(fd),
-                              static_cast<long>(address),
-                              static_cast<long>(remaining), 0L, 0L, 0L),
+                stdoc_syscall3(syscall_write, static_cast<long>(fd),
+                               static_cast<long>(address),
+                               static_cast<long>(remaining)),
                 &written) != 0)
         {
             return -1;
@@ -221,10 +221,10 @@ extern "C" int stdoc_sys_read(int fd, void *p_buffer, std::size_t length)
         return -1;
     }
 
-    result = stdoc_syscall(
+    result = stdoc_syscall3(
         syscall_read, static_cast<long>(fd),
         static_cast<long>(reinterpret_cast<std::uintptr_t>(p_buffer)),
-        static_cast<long>(length), 0L, 0L, 0L);
+        static_cast<long>(length));
 
     return stdoc_kernel_result(result, nullptr);
 }
@@ -233,8 +233,7 @@ extern "C" int stdoc_sys_close(int fd)
 {
     long result;
 
-    result = stdoc_syscall(syscall_close, static_cast<long>(fd), 0L, 0L,
-                           0L, 0L, 0L);
+    result = stdoc_syscall3(syscall_close, static_cast<long>(fd), 0L, 0L);
 
     return stdoc_kernel_result(result, nullptr);
 }
@@ -255,8 +254,8 @@ extern "C" void stdoc_sys_exit(int status)
     for (;;)
     {
         static_cast<void>(
-            stdoc_syscall(syscall_exit_group, static_cast<long>(status),
-                          0L, 0L, 0L, 0L, 0L));
+            stdoc_syscall3(syscall_exit_group, static_cast<long>(status),
+                           0L, 0L));
     }
 }
 
