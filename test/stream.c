@@ -40,9 +40,9 @@
  * before it and flushed later.
  *
  * The staging buffer is crossed on purpose: a line longer than
- * STDOC_BUFFER_SIZE has to go out in several writes and still arrive
- * whole.  A discarded stretch of bytes has to leave no trace, while
- * everything flushed before the discard has to survive it.
+ * STDOC_BUFFER_SIZE has to bypass or refill the buffer and still
+ * arrive whole.  A discarded stretch of bytes has to leave no trace,
+ * while everything flushed before the discard has to survive it.
  *
  * The public interface covers all of this except the discard, whose
  * effect a caller can only observe through a failed formatted call.
