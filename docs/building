@@ -32,11 +32,27 @@ Quick start
     ctest --test-dir build --output-on-failure
 
 Builds are out-of-source only: "build" is the conventional directory
-name and is already ignored by Git.
+name and is already ignored by Git.  When no build type is given, the
+configure step selects RelWithDebInfo rather than leaving the build
+with no optimisation flags at all; see below.
 
 
 Build options
 -------------
+
+CMAKE_BUILD_TYPE
+    RelWithDebInfo when the variable is not set at all or is set to
+    the empty string.  That build type uses -O2 with -g, so a default
+    build is optimised and still carries debug information.  Debug,
+    Release and MinSizeRel are chosen explicitly:
+
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+    The choice is recorded in the cache, so a later build in the same
+    directory keeps it.  A multi-configuration generator such as Ninja
+    Multi-Config or Visual Studio chooses the type with
+    --config instead, and the default above does not apply to it.
 
 STDOC_BUILD_TESTS
     ON by default.  Set to OFF to build only the library:
@@ -103,6 +119,13 @@ for reasons that matter:
     result a plain non-PIE executable: both drivers already imply
     "-no-pie" for a static link, and passing it as well only makes
     Clang report it as an unused argument on every link.
+  * The default RelWithDebInfo build type contributes "-O2 -g
+    -DNDEBUG".  The library itself has no assert calls, so -DNDEBUG
+    changes nothing in the archive; -O2 is what lets the block copies
+    in io/string.cxx become wide loads and stores, and -g keeps a
+    failure readable in a debugger.  Build with Debug for an
+    unoptimised run and with Release when the debug information is not
+    wanted.
 
 The same warning set is used for the library and for the C tests, so a
 test can never be sloppier than the code it exercises:
@@ -223,10 +246,11 @@ x86_64-linux-gnu-ubuntu-lts-26.04.yml on an x86_64 one, both on Ubuntu
 26.04 LTS and under .github/workflows/.  Each checks three things on
 every push and pull request:
 
-  * the build and the test suite under GNU C and under Clang, at the
-    default arena size and at the smallest one the configuration
-    accepts, so the boundary the allocator documents is exercised as
-    well as the ordinary case;
+  * the build and the test suite under GNU C and under Clang, with
+    RelWithDebInfo for the ordinary rows and Debug for the
+    smallest-arena row, at the default arena size and at the smallest
+    one the configuration accepts, so the boundary the allocator
+    documents is exercised as well as the ordinary case;
   * test/expected-format.txt regenerated from the host C library, which
     fails if the golden file in the repository no longer matches what a
     reference library prints, so it cannot drift into being a snapshot
