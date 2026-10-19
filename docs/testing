@@ -7,6 +7,11 @@ The tests are registered with CTest and run with:
     cmake --build build
     ctest --test-dir build --output-on-failure
 
+The configure step selects RelWithDebInfo when no build type is given,
+so the ordinary test run exercises the code the library ships with.
+Add -DCMAKE_BUILD_TYPE=Debug for an unoptimised run; both are covered
+by the architecture workflows.
+
 Run a subset by name:
 
     ctest --test-dir build -R heap --output-on-failure
@@ -20,8 +25,9 @@ What is registered today
     differential          format.c's engine against a reference C library,
                           case by case, at test time
     error_handling        failure paths (self-checking)
-    stream_output         staging, discard and stream order, merged
-                          golden output of stream.c
+    stream_output         staging, discard, stream order and a payload
+                          larger than the staging buffer, merged golden
+                          output of stream.c
     large_write_is_reported
                           one 200000 byte write, checked for status,
                           length and bytes on a file and on a pipe
