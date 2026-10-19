@@ -68,9 +68,14 @@ _start:
 
     bl      main                    /* main(argc, argv, envp)         */
 
-    /* main's return value is already in x0 and becomes the status.   */
-    bl      stdoc_sys_exit
-    b       .                       /* unreachable; guards bad kernels */
+    /*
+     * main's return value is already in x0 and becomes the status.
+     * stdoc_sys_exit never returns, so this is a tail branch rather
+     * than a call: the stack stays 16-byte aligned and x30 still points
+     * into this file, which is a harmless guard if a kernel ever did
+     * return from the exit system call.
+     */
+    b       stdoc_sys_exit
     .size   _start, .-_start
 
 /*
