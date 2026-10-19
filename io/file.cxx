@@ -146,9 +146,14 @@ extern "C" void stdoc_stream_discard(stdoc_FILE *stream)
  *
  * The bytes are copied in blocks rather than one at a time: the free
  * space in the buffer is filled in one go, and only the part that was
- * copied is looked at for the newline that has to trigger a flush.  A
- * payload larger than the buffer is handled by repeated flushes rather
- * than by an oversized stack copy.
+ * copied is looked at for the newline that has to trigger a flush.
+ *
+ * A stream that has nothing staged can skip the staging copy entirely:
+ * an unbuffered stream is going to hand the bytes to the kernel anyway,
+ * and a payload larger than the buffer would only be copied into it to
+ * be flushed again.  Both cases go straight to stdoc_sys_write, which
+ * already repeats a short write until the whole payload has been
+ * accepted.
  */
 extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
                                   std::size_t length)
@@ -181,6 +186,27 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
 
     while (remaining > 0)
     {
+        /*
+         * Nothing is staged, so there is no ordering to preserve: hand
+         * the whole remainder to the kernel when the stream is
+         * unbuffered or when it would only be copied into the staging
+         * buffer and flushed again.  The strict comparison keeps the
+         * documented "a full buffer stays staged" behaviour for a
+         * buffered payload of exactly STDOC_BUFFER_SIZE bytes.
+         */
+        if ((stream->length == 0) &&
+            ((stream->unbuffered != 0) ||
+             (remaining > STDOC_BUFFER_SIZE)))
+        {
+            if (stdoc_sys_write(stream->fd, p_bytes, remaining) != 0)
+            {
+                stream->error = 1;
+                return -1;
+            }
+
+            return 0;
+        }
+
         available = STDOC_BUFFER_SIZE - stream->length;
 
         if (available == 0)
@@ -190,7 +216,12 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
                 return -1;
             }
 
-            available = STDOC_BUFFER_SIZE;
+            /*
+             * The buffer is empty again.  Re-enter the loop so the
+             * direct path above can take the rest of a large payload
+             * instead of staging and flushing it 256 bytes at a time.
+             */
+            continue;
         }
 
         taken = (remaining < available) ? remaining : available;
