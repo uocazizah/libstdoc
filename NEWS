@@ -1,16 +1,69 @@
 libstdoc news
 ===============
 
-unreleased
+2.0.1-beta
 ----------
 
-Changes made after the 2.0.0-beta release.  Nothing here is released
-yet.
+Released 19 October 2026.
+
+This release keeps the ISO C17 public interface and the ISO C++23
+implementation language unchanged.  It concentrates on small, low-risk
+improvements to the Linux system-call layer, the stream output path and
+the internal string helpers; every exported symbol keeps its name,
+signature and C linkage.
+
+
+Library
+~~~~~~~
+
+  * assembly/syscall_aarch64.S and assembly/syscall_x86_64.S now
+    provide stdoc_syscall3 alongside the existing six-argument
+    stdoc_syscall.  io/syscall_linux.cxx uses the three-argument entry
+    point for read, write, close and exit_group, which is every call
+    the platform layer wraps: aarch64 shifts three argument registers
+    instead of six, and x86_64 also avoids the stack load that the
+    sixth argument needed.  The kernel ABI and the portable code above
+    the trampoline are unchanged, and the six-argument entry point
+    remains for a future call that needs it.
+  * assembly/start_aarch64.S tail-branches to stdoc_sys_exit instead of
+    calling a function that never returns.  The stack stays 16-byte
+    aligned and the link register still points into the startup file as
+    a guard.  The x86_64 entry point keeps its call: after main returns,
+    %rsp is 16-byte aligned, and the call gives stdoc_sys_exit the
+    8-mod-16 alignment the System V AMD64 ABI gives a called function.
+  * io/file.cxx: stdoc_stream_write bypasses the staging buffer when
+    nothing is staged and either the stream is unbuffered or the
+    payload is larger than STDOC_BUFFER_SIZE.  The unbuffered case no
+    longer copies and flushes the payload first, and a large buffered
+    payload is handed to stdoc_sys_write in one call instead of being
+    copied through the buffer and flushed in 256-byte pieces.  On a
+    buffered stream, a payload of exactly STDOC_BUFFER_SIZE bytes still
+    fills the buffer, so the documented staging behaviour is preserved.
+  * io/string.cxx: stdoc_memcpy and stdoc_memset move sixteen bytes at
+    a time through a local byte block, which the compiler turns into
+    wide loads and stores without a cast that would break alignment or
+    aliasing rules.  The functions still read and write only inside the
+    caller's length.  stdoc_strlen now walks with a pointer, but stays
+    byte-wise on purpose: a word-at-a-time scan could read past the
+    terminating null and outside the object.
 
 
 Build
 ~~~~~
 
+  * The package version is 2.0.1.  CMake versions carry no suffix, so
+    the beta status of this release is recorded here in NEWS rather
+    than in libstdoc.pc or the CMake package version.
+  * A configure that does not choose CMAKE_BUILD_TYPE now selects
+    RelWithDebInfo instead of leaving the build with no optimisation
+    flags at all.  The default is recorded in the cache, so a later
+    build in the same directory keeps it; Debug, Release and
+    MinSizeRel are still chosen explicitly, and a multi-configuration
+    generator continues to choose the type at build time.
+  * The two target workflows now set the build type explicitly: the
+    ordinary GNU C and Clang rows build RelWithDebInfo, and the
+    smallest-arena row builds Debug.  Both an optimised and an
+    unoptimised configuration therefore keep running the whole suite.
   * The two target workflows and the static-analysis job now run on
     Ubuntu 26.04 LTS: ubuntu-26.04 on x86_64 and ubuntu-26.04-arm on
     aarch64.  The two workflow files carry the release in their names
@@ -27,6 +80,20 @@ Build
     was given, and the grep that requires the message to name that
     processor failed.  The job failed this way at 5e5d72a; it now
     passes for i686, arm, riscv64 and ppc64le.
+
+
+Documentation
+~~~~~~~~~~~~~
+
+  * docs/building documents the RelWithDebInfo default, how to choose
+    another build type, and the explicit build types of the CI matrix.
+  * docs/io describes the direct-write stream path, the two
+    system-call trampolines, the aarch64 tail branch and the block
+    copies in io/string.cxx; docs/formatting shows the direct path in
+    the flow of one formatted call.
+  * docs/testing and README were brought in line with the default
+    build type, the stream test's larger-than-buffer case and the
+    2.0.1-beta version.
 
 
 2.0.0-beta
