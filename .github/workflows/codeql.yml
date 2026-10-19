@@ -27,7 +27,10 @@ jobs:
     #   - https://gh.io/supported-runners-and-hardware-resources
     #   - https://gh.io/using-larger-runners (GitHub.com only)
     # Consider using larger runners or machines with greater resources for possible analysis time improvements.
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    # The only language in the matrix is c-cpp; name the LTS image the
+    # other workflows in this directory run on instead of letting
+    # ubuntu-latest migrate under the analysis.
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-26.04' }}
     permissions:
       # required for all workflows
       security-events: write
