@@ -1,5 +1,5 @@
 /*
- * libstdoc - stream staging, discard and ordering test
+ * yupiter - stream staging, discard and ordering test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -40,19 +40,19 @@
  * before it and flushed later.
  *
  * The staging buffer is crossed on purpose: a line longer than
- * STDOC_BUFFER_SIZE has to bypass or refill the buffer and still
+ * YUPITER_BUFFER_SIZE has to bypass or refill the buffer and still
  * arrive whole.  A discarded stretch of bytes has to leave no trace,
  * while everything flushed before the discard has to survive it.
  *
  * The public interface covers all of this except the discard, whose
  * effect a caller can only observe through a failed formatted call.
  * The internal header is included for that one function; see its
- * declaration in include/stdoc_io.hxx.
+ * declaration in include/yupiter_io.hxx.
  */
 
 #include <stddef.h>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
 /*
  * Longer than the staging buffer, and patterned so that a chunk which
@@ -79,24 +79,24 @@ int main(void)
      * second stderr line is written, so the unbuffered stream reaches
      * the output first.
      */
-    stdoc_printf("order:stdout-one\n");
-    stdoc_fprintf(stdoc_stderr, "order:stderr-one\n");
-    stdoc_printf("order:stdout-two-staged");
-    stdoc_fprintf(stdoc_stderr, "order:stderr-two\n");
-    stdoc_printf("-and-completed\n");
+    yupiter_printf("order:stdout-one\n");
+    yupiter_fprintf(yupiter_stderr, "order:stderr-one\n");
+    yupiter_printf("order:stdout-two-staged");
+    yupiter_fprintf(yupiter_stderr, "order:stderr-two\n");
+    yupiter_printf("-and-completed\n");
 
     /* Discarding drops the staged bytes and nothing else. */
-    stdoc_printf("discard:already-flushed\n");
-    stdoc_printf("discard:staged-and-thrown-away");
-    stdoc_stream_discard(stdoc_stdout);
-    stdoc_printf("discard:still-alive\n");
+    yupiter_printf("discard:already-flushed\n");
+    yupiter_printf("discard:staged-and-thrown-away");
+    yupiter_stream_discard(yupiter_stdout);
+    yupiter_printf("discard:still-alive\n");
 
     /* A line longer than the staging buffer, on both streams. */
-    written = stdoc_printf("boundary:%s\n", long_line);
-    stdoc_printf("boundary:written=%d\n", written);
+    written = yupiter_printf("boundary:%s\n", long_line);
+    yupiter_printf("boundary:written=%d\n", written);
 
-    written = stdoc_fprintf(stdoc_stderr, "stderr-boundary:%s\n", long_line);
-    stdoc_printf("stderr-boundary:written=%d\n", written);
+    written = yupiter_fprintf(yupiter_stderr, "stderr-boundary:%s\n", long_line);
+    yupiter_printf("stderr-boundary:written=%d\n", written);
 
     return 0;
 }
