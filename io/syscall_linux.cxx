@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -45,8 +45,8 @@
  * compilation instead of being silently mapped onto numbers that
  * belong to another one.  How the kernel is entered - which registers
  * carry the number, the arguments and the result - belongs to the
- * assembly trampolines (assembly/syscall_aarch64.S and
- * assembly/syscall_x86_64.S); this file sees a plain C function.
+ * assembly trampolines (assembly/yupiter_syscall_aarch64.S and
+ * assembly/yupiter_syscall_x86_64.S); this file sees a plain C function.
  *
  * The public wrappers carry the C linkage the internal header
  * declares, so the C tests can call them under their unmangled names.
@@ -55,9 +55,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
-namespace stdoc::io
+namespace yupiter::io
 {
 
 namespace
@@ -84,7 +84,7 @@ constexpr long syscall_read = 0L;
 constexpr long syscall_write = 1L;
 constexpr long syscall_exit_group = 231L;
 #else
-#error "libstdoc: no Linux system-call numbers for this architecture"
+#error "yupiter: no Linux system-call numbers for this architecture"
 #endif
 
 /*
@@ -116,7 +116,7 @@ constexpr long kernel_error_floor = -4095L;
  * comparison is done on the unsigned representation so that it is well
  * defined for every long value, including negative ones.
  */
-int stdoc_kernel_result(long result, std::size_t *p_count)
+int yupiter_kernel_result(long result, std::size_t *p_count)
 {
     unsigned long magnitude;
 
@@ -150,7 +150,7 @@ int stdoc_kernel_result(long result, std::size_t *p_count)
  * as a failure instead of being retried: it would otherwise repeat
  * forever without the write ever making progress.
  */
-extern "C" int stdoc_sys_write(int fd, const void *p_buffer,
+extern "C" int yupiter_sys_write(int fd, const void *p_buffer,
                                std::size_t length)
 {
     const unsigned char *p_bytes;
@@ -173,8 +173,8 @@ extern "C" int stdoc_sys_write(int fd, const void *p_buffer,
 
         address = reinterpret_cast<std::uintptr_t>(p_bytes + offset);
 
-        if (stdoc_kernel_result(
-                stdoc_syscall3(syscall_write, static_cast<long>(fd),
+        if (yupiter_kernel_result(
+                yupiter_syscall3(syscall_write, static_cast<long>(fd),
                                static_cast<long>(address),
                                static_cast<long>(remaining)),
                 &written) != 0)
@@ -212,7 +212,7 @@ extern "C" int stdoc_sys_write(int fd, const void *p_buffer,
  * this interface until the input layer needs it, rather than being
  * exposed now for a caller that does not exist.
  */
-extern "C" int stdoc_sys_read(int fd, void *p_buffer, std::size_t length)
+extern "C" int yupiter_sys_read(int fd, void *p_buffer, std::size_t length)
 {
     long result;
 
@@ -221,28 +221,28 @@ extern "C" int stdoc_sys_read(int fd, void *p_buffer, std::size_t length)
         return -1;
     }
 
-    result = stdoc_syscall3(
+    result = yupiter_syscall3(
         syscall_read, static_cast<long>(fd),
         static_cast<long>(reinterpret_cast<std::uintptr_t>(p_buffer)),
         static_cast<long>(length));
 
-    return stdoc_kernel_result(result, nullptr);
+    return yupiter_kernel_result(result, nullptr);
 }
 
-extern "C" int stdoc_sys_close(int fd)
+extern "C" int yupiter_sys_close(int fd)
 {
     long result;
 
-    result = stdoc_syscall3(syscall_close, static_cast<long>(fd), 0L, 0L);
+    result = yupiter_syscall3(syscall_close, static_cast<long>(fd), 0L, 0L);
 
-    return stdoc_kernel_result(result, nullptr);
+    return yupiter_kernel_result(result, nullptr);
 }
 
-extern "C" void stdoc_sys_exit(int status)
+extern "C" void yupiter_sys_exit(int status)
 {
     /*
      * exit_group is used rather than exit so that every thread of the
-     * process is terminated; libstdoc does not create threads, but a
+     * process is terminated; yupiter does not create threads, but a
      * program linked against it may.
      *
      * The system call never returns.  Repeating it rather than
@@ -254,9 +254,9 @@ extern "C" void stdoc_sys_exit(int status)
     for (;;)
     {
         static_cast<void>(
-            stdoc_syscall3(syscall_exit_group, static_cast<long>(status),
+            yupiter_syscall3(syscall_exit_group, static_cast<long>(status),
                            0L, 0L));
     }
 }
 
-} /* namespace stdoc::io */
+} /* namespace yupiter::io */
