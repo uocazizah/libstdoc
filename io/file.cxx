@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -49,9 +49,9 @@
 
 #include <cstddef>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
-namespace stdoc::io
+namespace yupiter::io
 {
 
 namespace
@@ -68,7 +68,7 @@ namespace
  * unbuffered as well, for the opposite reason: nothing writes to it,
  * so a buffer it could never flush would be dead space in the object.
  */
-constinit stdoc_FILE stdoc_stream_stdin{
+constinit yupiter_FILE yupiter_stream_stdin{
     0,   /* fd          */
     0,   /* error       */
     1,   /* unbuffered  */
@@ -76,7 +76,7 @@ constinit stdoc_FILE stdoc_stream_stdin{
     {}   /* buffer      */
 };
 
-constinit stdoc_FILE stdoc_stream_stdout{
+constinit yupiter_FILE yupiter_stream_stdout{
     1,   /* fd          */
     0,   /* error       */
     0,   /* buffered    */
@@ -84,7 +84,7 @@ constinit stdoc_FILE stdoc_stream_stdout{
     {}   /* buffer      */
 };
 
-constinit stdoc_FILE stdoc_stream_stderr{
+constinit yupiter_FILE yupiter_stream_stderr{
     2,   /* fd          */
     0,   /* error       */
     1,   /* unbuffered  */
@@ -94,11 +94,11 @@ constinit stdoc_FILE stdoc_stream_stderr{
 
 } /* namespace */
 
-extern "C" constinit stdoc_FILE *const stdoc_stdin = &stdoc_stream_stdin;
-extern "C" constinit stdoc_FILE *const stdoc_stdout = &stdoc_stream_stdout;
-extern "C" constinit stdoc_FILE *const stdoc_stderr = &stdoc_stream_stderr;
+extern "C" YUPITER_PUBLIC constinit yupiter_FILE *const yupiter_stdin = &yupiter_stream_stdin;
+extern "C" YUPITER_PUBLIC constinit yupiter_FILE *const yupiter_stdout = &yupiter_stream_stdout;
+extern "C" YUPITER_PUBLIC constinit yupiter_FILE *const yupiter_stderr = &yupiter_stream_stderr;
 
-extern "C" int stdoc_stream_flush(stdoc_FILE *stream)
+extern "C" int yupiter_stream_flush(yupiter_FILE *stream)
 {
     std::size_t length;
 
@@ -119,7 +119,7 @@ extern "C" int stdoc_stream_flush(stdoc_FILE *stream)
         return 0;
     }
 
-    if (stdoc_sys_write(stream->fd, stream->buffer, length) != 0)
+    if (yupiter_sys_write(stream->fd, stream->buffer, length) != 0)
     {
         stream->error = 1;
         stream->length = 0;
@@ -130,7 +130,7 @@ extern "C" int stdoc_stream_flush(stdoc_FILE *stream)
     return 0;
 }
 
-extern "C" void stdoc_stream_discard(stdoc_FILE *stream)
+extern "C" void yupiter_stream_discard(yupiter_FILE *stream)
 {
     if (stream == nullptr)
     {
@@ -151,11 +151,11 @@ extern "C" void stdoc_stream_discard(stdoc_FILE *stream)
  * A stream that has nothing staged can skip the staging copy entirely:
  * an unbuffered stream is going to hand the bytes to the kernel anyway,
  * and a payload larger than the buffer would only be copied into it to
- * be flushed again.  Both cases go straight to stdoc_sys_write, which
+ * be flushed again.  Both cases go straight to yupiter_sys_write, which
  * already repeats a short write until the whole payload has been
  * accepted.
  */
-extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
+extern "C" int yupiter_stream_write(yupiter_FILE *stream, const void *p_buffer,
                                   std::size_t length)
 {
     const unsigned char *p_bytes;
@@ -192,13 +192,13 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
          * unbuffered or when it would only be copied into the staging
          * buffer and flushed again.  The strict comparison keeps the
          * documented "a full buffer stays staged" behaviour for a
-         * buffered payload of exactly STDOC_BUFFER_SIZE bytes.
+         * buffered payload of exactly YUPITER_BUFFER_SIZE bytes.
          */
         if ((stream->length == 0) &&
             ((stream->unbuffered != 0) ||
-             (remaining > STDOC_BUFFER_SIZE)))
+             (remaining > YUPITER_BUFFER_SIZE)))
         {
-            if (stdoc_sys_write(stream->fd, p_bytes, remaining) != 0)
+            if (yupiter_sys_write(stream->fd, p_bytes, remaining) != 0)
             {
                 stream->error = 1;
                 return -1;
@@ -207,11 +207,11 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
             return 0;
         }
 
-        available = STDOC_BUFFER_SIZE - stream->length;
+        available = YUPITER_BUFFER_SIZE - stream->length;
 
         if (available == 0)
         {
-            if (stdoc_stream_flush(stream) != 0)
+            if (yupiter_stream_flush(stream) != 0)
             {
                 return -1;
             }
@@ -226,7 +226,7 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
 
         taken = (remaining < available) ? remaining : available;
 
-        static_cast<void>(stdoc_memcpy(&stream->buffer[stream->length],
+        static_cast<void>(yupiter_memcpy(&stream->buffer[stream->length],
                                        p_bytes, taken));
         stream->length = stream->length + taken;
 
@@ -250,7 +250,7 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
 
         if (newline != 0)
         {
-            if (stdoc_stream_flush(stream) != 0)
+            if (yupiter_stream_flush(stream) != 0)
             {
                 return -1;
             }
@@ -265,7 +265,7 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
      */
     if (stream->unbuffered != 0)
     {
-        if (stdoc_stream_flush(stream) != 0)
+        if (yupiter_stream_flush(stream) != 0)
         {
             return -1;
         }
@@ -274,4 +274,4 @@ extern "C" int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer,
     return 0;
 }
 
-} /* namespace stdoc::io */
+} /* namespace yupiter::io */
