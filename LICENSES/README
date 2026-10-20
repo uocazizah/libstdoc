@@ -1,7 +1,7 @@
-libstdoc licenses
+yupiter licenses
 ===================
 
-This directory documents every license that applies to the libstdoc
+This directory documents every license that applies to the yupiter
 repository.  The library is multi licensed: every recipient may
 choose between three licenses, per use, at no cost.
 
@@ -15,7 +15,7 @@ GPL-2.0-or-later (GPLv2+)
 Full text: GPL-2.0.txt
 
 The GNU General Public License, version 2 or any later version.  A
-program that contains or is derived from libstdoc and is distributed
+program that contains or is derived from yupiter and is distributed
 must be distributed in total under a GPL-compatible license: in
 practice, under the GPL family itself, with the source code offered to
 the recipients.
@@ -29,16 +29,16 @@ LGPL-2.1-or-later (LGPLv2+)
 Full text: LGPL-2.1.txt
 
 The GNU Lesser General Public License, version 2.1 or any later
-version.  The LGPL applies to libstdoc itself.  A program that merely
-uses the library (for example, links against libstdoc.so) stays under
+version.  The LGPL applies to yupiter itself.  A program that merely
+uses the library (for example, links against libyupiter.so) stays under
 the license chosen by its own author, including a proprietary license.
 
 The obligations of the LGPL on the user of the library are, in short:
 
 * Any work that uses the library must let the user relink it against
   a modified version of the library.  For dynamic linking against
-  libstdoc.so this is automatic.  For static linking against
-  libstdoc.a, the LGPL requires that the user can perform the relink,
+  libyupiter.so this is automatic.  For static linking against
+  libyupiter.a, the LGPL requires that the user can perform the relink,
   for example by shipping the object files or by using a shared
   library.
 
@@ -60,12 +60,12 @@ Full text: Apache-2.0.txt
 
 The Apache License, Version 2.0.  A permissive license with an
 explicit patent grant from the contributors.  A work that contains or
-is derived from libstdoc may be distributed under any license,
+is derived from yupiter may be distributed under any license,
 including a proprietary license, with no obligation to release the
 source code of your own work.
 
 This option is the right choice when your project must link against
-libstdoc statically, for example because shared objects or DLLs are
+yupiter statically, for example because shared objects or DLLs are
 not an option in your environment: the Apache License imposes no
 conditions on linking at all, static or dynamic.  The conditions of
 redistribution are limited to keeping the notices, stating changes to
@@ -77,7 +77,7 @@ rights under the license.
 
 Note on compatibility: the Apache License 2.0 is one-way incompatible
 with the GNU GPL version 2, so a combined work may not be distributed
-under GPLv2.  Because the GPL option of libstdoc is "version 2 or any
+under GPLv2.  Because the GPL option of yupiter is "version 2 or any
 later version", you may distribute such a combination under GPLv3
 instead, which accepts Apache-2.0 code.
 
