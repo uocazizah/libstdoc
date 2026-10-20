@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,7 +30,7 @@
  */
 
 /*
- * System-call trampolines for Linux on aarch64.
+ * The six-argument system-call trampoline for Linux on aarch64.
  *
  * Written in GNU assembler (GAS) syntax, as required by the project
  * conventions.  The Linux system-call ABI for aarch64 differs from the
@@ -40,14 +40,15 @@
  * which means the trampoline only has to shift every argument one
  * register to the right and move the number into place.
  *
- * The three-argument entry point is the one the library uses for read,
- * write, close and exit: shifting three arguments instead of six saves
- * three moves on every system call without changing the kernel ABI or
- * the portable code above this layer.  The six-argument entry point
- * remains for a future call that needs more registers.
+ * The six-argument entry point remains for a future call that needs
+ * more registers.  The three-argument entry point that read, write,
+ * close and exit use is in syscall3_aarch64.S: shifting three
+ * arguments instead of six saves three moves on every system call
+ * without changing the kernel ABI or the portable code above this
+ * layer.
  *
  * Registers x19..x30 are preserved across the call as the C calling
- * convention requires; these functions touch only the argument
+ * convention requires; this function touches only the argument
  * registers, the result register and the status register, so no
  * explicit save or restore is needed.
  */
@@ -56,15 +57,16 @@
     .align 2
 
 /*
- * long stdoc_syscall(long number, long arg1, long arg2, long arg3,
+ * long yupiter_syscall(long number, long arg1, long arg2, long arg3,
  *                    long arg4, long arg5, long arg6);
  *
  * On entry:  x0 = number, x1..x6 = arguments.
  * On exit:   x0 = raw kernel result.
  */
-    .global stdoc_syscall
-    .type   stdoc_syscall, %function
-stdoc_syscall:
+    .global yupiter_syscall
+    .hidden yupiter_syscall
+    .type   yupiter_syscall, %function
+yupiter_syscall:
     mov     x8, x0          /* system-call number goes in x8          */
     mov     x0, x1          /* shift the arguments into x0 .. x5      */
     mov     x1, x2
@@ -74,25 +76,7 @@ stdoc_syscall:
     mov     x5, x6
     svc     #0              /* invoke the kernel                      */
     ret                     /* result is already in x0                */
-    .size   stdoc_syscall, .-stdoc_syscall
-
-/*
- * long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
- *
- * On entry:  x0 = number, x1..x3 = arguments.
- * On exit:   x0 = raw kernel result.
- */
-    .align 2
-    .global stdoc_syscall3
-    .type   stdoc_syscall3, %function
-stdoc_syscall3:
-    mov     x8, x0          /* system-call number goes in x8          */
-    mov     x0, x1          /* shift the arguments into x0 .. x2      */
-    mov     x1, x2
-    mov     x2, x3
-    svc     #0              /* invoke the kernel                      */
-    ret                     /* result is already in x0                */
-    .size   stdoc_syscall3, .-stdoc_syscall3
+    .size   yupiter_syscall, .-yupiter_syscall
 
 /*
  * Mark the stack as non-executable when the section is present.
