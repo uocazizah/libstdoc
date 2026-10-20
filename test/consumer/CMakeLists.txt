@@ -1,7 +1,7 @@
-# libstdoc - a program that consumes the installed package
+# yupiter - a program that consumes the installed package
 #
-# This project is not part of the libstdoc build.  The install test
-# builds and installs libstdoc into a scratch prefix, configures this
+# This project is not part of the yupiter build.  The install test
+# builds and installs yupiter into a scratch prefix, configures this
 # project against that prefix, builds it and runs it - which is what
 # proves the installed package is actually usable: find_package finds
 # the configuration file, the imported target carries the include
@@ -10,13 +10,13 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-project(libstdoc-consumer LANGUAGES C)
+project(yupiter-consumer LANGUAGES C)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-find_package(libstdoc REQUIRED)
+find_package(yupiter REQUIRED)
 
 add_executable(consumer main.c)
-target_link_libraries(consumer PRIVATE libstdoc::stdoc)
+target_link_libraries(consumer PRIVATE yupiter::yupiter)
