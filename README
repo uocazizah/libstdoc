@@ -1,9 +1,9 @@
-libstdoc
+yupiter
 -----------
 
-libstdoc is a library for the C programming language.
+yupiter is a library for the C programming language.
 
-libstdoc aims to be fast, customizable and safe, while maintaining
+yupiter aims to be fast, customizable and safe, while maintaining
 performance and control close to the traditional GNU C library
 (glibc).
 
@@ -18,23 +18,49 @@ than silently mapped onto an implementation that does not match it.
 Project Status
 -----------------
 
-libstdoc is currently in the beta stage: the current release is
-2.0.1-beta (see NEWS).
+yupiter is stable.  The current release is 1.0.0 (see NEWS); the
+shared object has SOVERSION 1.
 
-The library is under active development and is not yet considered stable.
-The standard library, the library internals and the project structure
-may change frequently until the final release.
+Within the 1.x series the exported symbols, their signatures, their C
+linkage and the public structure layouts do not change.  A change that
+breaks any of them requires a new major version.  New functions, new
+headers and new optional build features may be added in a minor
+release without breaking existing consumers.
+
+Build
+-----------------
+
+The build is a GNU Makefile driven by a POSIX configure script; no
+CMake, Python or generator is required on the build host.
+
+    ./configure
+    make
+    make check
+    make install
+
+"make" builds both libyupiter.a and libyupiter.so by default.  The
+configure script detects Linux and the target architecture, checks
+that the compiler can build the freestanding C++23 implementation, and
+writes config.mk.  Run ./configure --help for the installation prefix,
+the build type, the heap size and the options that select the static
+library, the shared library and the tests.
+
+The static archive contains the startup file and is meant for a
+freestanding program linked with "-nostdlib".  The shared object
+contains no entry point and is meant for a hosted program that already
+has one.  Neither needs a C library or a C++ runtime.
 
 Repository Structure
 -----------------------
-assembly/     Source Code of Assembly
-io/           Source Code of Input Output (C++23)
-mem/          Source Code of Memory (C++23)
-etc/          Project configuration files
+assembly/     Freestanding entry point and system-call trampolines
+io/           Streams, formatting and the Linux system-call layer (C++23)
+mem/          The allocator (C++23)
+etc/          Templates of the package metadata
 include/      Public headers and internal headers
 docs/         Documentation
 test/         Tests in C, plus a C++ compatibility test
-build/        manual build directory
+mk/           Makefile modules
+build/        Generated build tree (not in the repository)
 
 Documentation
 ----------------------
@@ -46,7 +72,7 @@ document and the reading order for a first-time reader.
 License
 ----------------------
 
-libstdoc is multi licensed.  You may use, copy, modify and distribute
+yupiter is multi licensed.  You may use, copy, modify and distribute
 it under your choice of either license:
 
 * GNU General Public License, version 2 or any later version (GPLv2+)
@@ -54,7 +80,7 @@ it under your choice of either license:
   version (LGPLv2+)
 * Apache License, Version 2.0 (Apache-2.0)
 
-The LGPLv2+ option lets you link libstdoc into your own program,
+The LGPLv2+ option lets you link yupiter into your own program,
 including a proprietary program, while keeping your program under
 your own license; the obligations of the LGPL apply to the library
 itself, not to the programs that use it.
@@ -72,5 +98,14 @@ Contributing
 
 Contributions, bug reports, and suggestions are welcome.
 
-As the library is still in early development, breaking changes may occur
-without notice.
+The public interface is stable, so a contribution that changes an
+exported symbol, its signature, its C linkage, a public structure
+layout or the documented behavior needs a very good reason and a new
+major version.  Portability fixes, bug fixes and new tests are always
+welcome.
+
+Every change is built and tested on Linux for aarch64 and x86_64 by
+GitHub Actions, with GCC and Clang, in Debug, RelWithDebInfo and
+Release configurations, and with the static library, the shared
+library and both.  A change that cannot be tested on a supported
+target should say so explicitly.
