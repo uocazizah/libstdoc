@@ -1,5 +1,5 @@
 /*
- * libstdoc - safe heap failure test
+ * yupiter - safe heap failure test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -35,7 +35,7 @@
  * mistake the safe functions are documented to refuse: an overflowing
  * request, a request the exhausted heap cannot meet, a double free
  * and a pointer that was never allocated.  Every scenario has to end
- * inside libstdoc with its diagnostic and status 134, so this program
+ * inside yupiter with its diagnostic and status 134, so this program
  * returns 0 whenever it does not terminate - an unknown scenario name
  * or a failure that went unrecognised therefore fails the test rather
  * than passing silently.  CheckFatal.cmake asserts the status.
@@ -47,8 +47,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "stdoc_io.hxx"
-#include "stdoc_mem.hxx"
+#include "yupiter_io.hxx"
+#include "yupiter_mem.hxx"
 
 /*
  * Compare two null-terminated strings without a string function of
@@ -91,7 +91,7 @@ static void fill_the_heap(void)
 
     for (;;)
     {
-        p_block = stdoc_malloc(64);
+        p_block = yupiter_malloc(64);
 
         if (p_block == NULL)
         {
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
 
     if (argc < 2)
     {
-        stdoc_fprintf(stdoc_stderr, "usage: heap_abort <scenario>\n");
+        yupiter_fprintf(yupiter_stderr, "usage: heap_abort <scenario>\n");
         return 0;
     }
 
@@ -120,40 +120,72 @@ int main(int argc, char **argv)
     if (scenario_is(p_scenario, "overflow") != 0)
     {
         /* "count * size" wraps around, which must not be truncated. */
-        (void)stdoc_malloc_safe(SIZE_MAX, 2u);
+        (void)yupiter_malloc_safe(SIZE_MAX, 2u);
     }
     else if (scenario_is(p_scenario, "oom") != 0)
     {
         fill_the_heap();
-        (void)stdoc_malloc_safe(1u, 64u);
+        (void)yupiter_malloc_safe(1u, 64u);
     }
     else if (scenario_is(p_scenario, "double_free") != 0)
     {
-        p_block = stdoc_malloc(16);
+        p_block = yupiter_malloc(16);
 
         if (p_block == NULL)
         {
             return 0;
         }
 
-        stdoc_free_safe(p_block);
-        stdoc_free_safe(p_block);
+        yupiter_free_safe(p_block);
+        yupiter_free_safe(p_block);
     }
     else if (scenario_is(p_scenario, "invalid_pointer") != 0)
     {
-        stdoc_free_safe((void *)(uintptr_t)0x1234);
+        yupiter_free_safe((void *)(uintptr_t)0x1234);
+    }
+    else if (scenario_is(p_scenario, "realloc_overflow") != 0)
+    {
+        (void)yupiter_realloc_safe(NULL, SIZE_MAX, 2u);
+    }
+    else if (scenario_is(p_scenario, "realloc_oom") != 0)
+    {
+        p_block = yupiter_malloc(16);
+
+        if (p_block == NULL)
+        {
+            return 0;
+        }
+
+        fill_the_heap();
+        (void)yupiter_realloc_safe(p_block, 1u, yupiter_heap_capacity());
+    }
+    else if (scenario_is(p_scenario, "realloc_double_free") != 0)
+    {
+        p_block = yupiter_malloc(16);
+
+        if (p_block == NULL)
+        {
+            return 0;
+        }
+
+        yupiter_free_safe(p_block);
+        (void)yupiter_realloc_safe(p_block, 1u, 16u);
+    }
+    else if (scenario_is(p_scenario, "realloc_invalid_pointer") != 0)
+    {
+        (void)yupiter_realloc_safe((void *)(uintptr_t)0x1234, 1u, 16u);
     }
     else
     {
-        stdoc_fprintf(stdoc_stderr, "unknown scenario: %s\n", p_scenario);
+        yupiter_fprintf(yupiter_stderr, "unknown scenario: %s\n", p_scenario);
         return 0;
     }
 
     /*
-     * Every scenario above terminates inside libstdoc, so reaching
+     * Every scenario above terminates inside yupiter, so reaching
      * this line means the failure was not recognised.
      */
-    stdoc_fprintf(stdoc_stderr, "scenario \"%s\" did not terminate\n",
+    yupiter_fprintf(yupiter_stderr, "scenario \"%s\" did not terminate\n",
                   p_scenario);
     return 0;
 }
