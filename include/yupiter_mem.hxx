@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -28,14 +28,14 @@
  * if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef STDOC_MEM_H
-#define STDOC_MEM_H
+#ifndef YUPITER_MEM_H
+#define YUPITER_MEM_H
 
 /*
- * Internal interface of the libstdoc heap (mem/heap.cxx).
+ * Internal interface of the yupiter heap (mem/heap.cxx).
  *
  * Nothing declared here is part of the public API.  The public
- * allocation functions live in "<libstdoc.h>"; this header only
+ * allocation functions live in "<yupiter.h>"; this header only
  * carries the sizing knob and the accounting that the tests use to
  * prove that no allocation is left behind.
  *
@@ -60,11 +60,11 @@ extern "C" {
  * than this many bytes into it.  The default is deliberately small -
  * the only library code that allocates is the formatting engine, which
  * needs less than a hundred bytes at a time - and a build may override
- * it with "-DSTDOC_HEAP_SIZE=<bytes>" or through the CMake cache
- * variable of the same name.
+ * it with "./configure --heap-size=<bytes>" or, when the library is
+ * compiled by other means, with "-DYUPITER_HEAP_SIZE=<bytes>".
  */
-#ifndef STDOC_HEAP_SIZE
-#define STDOC_HEAP_SIZE 4096
+#ifndef YUPITER_HEAP_SIZE
+#define YUPITER_HEAP_SIZE 4096
 #endif
 
 /*
@@ -73,18 +73,18 @@ extern "C" {
  * released, which is exactly what the tests assert after exercising
  * the library.
  */
-size_t stdoc_heap_live_bytes(void);
-size_t stdoc_heap_live_blocks(void);
+size_t yupiter_heap_live_bytes(void);
+size_t yupiter_heap_live_blocks(void);
 
 /*
  * Total size of the arena, in bytes.  A test uses it to ask for an
  * allocation that only the whole arena can serve, which is how the
  * merging of free blocks is proven after everything was released.
  */
-size_t stdoc_heap_capacity(void);
+size_t yupiter_heap_capacity(void);
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /* STDOC_MEM_H */
+#endif /* YUPITER_MEM_H */
