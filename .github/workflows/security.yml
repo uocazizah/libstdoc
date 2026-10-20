@@ -1,4 +1,4 @@
-# libstdoc - linter and security audit
+# yupiter - linter and security audit
 #
 # Two tools that read the sources instead of running them, on every
 # change.  Neither is a proof of anything, and neither is a substitute
@@ -56,7 +56,7 @@
 # passes it to the conversion suite: those tests pin down conversions
 # that a compiler refuses, so the diagnostic has to be off for them.
 # The check is doubled by the attribute on the public declarations,
-# which stays on everywhere else; see test/CMakeLists.txt.  The C++
+# which stays on everywhere else; see mk/tests.mk.  The C++
 # implementation is never parsed with the diagnostic off: it is
 # format-clean and is kept that way.
 #
