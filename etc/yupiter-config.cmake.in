@@ -1,0 +1,60 @@
+# yupiter - CMake package configuration
+#
+# Generated from etc/yupiter-config.cmake.in by the build.  A project
+# that consumes yupiter with CMake does this:
+#
+#     find_package(yupiter REQUIRED)
+#     target_link_libraries(my_program PRIVATE yupiter::yupiter)
+#
+# yupiter::yupiter is the shared library when the package provides one
+# and the static library otherwise.  A consumer that needs a particular
+# kind links yupiter::yupiter_shared or yupiter::yupiter_static, which
+# exist only when that kind was built and installed.
+#
+# The prefix is derived from the location of this file instead of being
+# written in at build time, so the package works from a DESTDIR staging
+# tree and after the installation is moved.
+
+get_filename_component(_yupiter_prefix
+    "${CMAKE_CURRENT_LIST_DIR}@PREFIX_UP@" ABSOLUTE)
+
+set(_yupiter_include "${_yupiter_prefix}/@INCLUDEDIR_REL@")
+set(_yupiter_libdir  "${_yupiter_prefix}/@LIBDIR_REL@")
+
+if(@HAVE_SHARED@)
+    if(NOT TARGET yupiter::yupiter_shared)
+        add_library(yupiter::yupiter_shared SHARED IMPORTED)
+        set_target_properties(yupiter::yupiter_shared PROPERTIES
+            IMPORTED_LOCATION "${_yupiter_libdir}/libyupiter.so"
+            IMPORTED_SONAME "libyupiter.so.@SOVERSION@"
+            INTERFACE_INCLUDE_DIRECTORIES "${_yupiter_include}")
+    endif()
+endif()
+
+if(@HAVE_STATIC@)
+    if(NOT TARGET yupiter::yupiter_static)
+        add_library(yupiter::yupiter_static STATIC IMPORTED)
+        set_target_properties(yupiter::yupiter_static PROPERTIES
+            IMPORTED_LOCATION "${_yupiter_libdir}/libyupiter.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${_yupiter_include}")
+    endif()
+endif()
+
+if(NOT TARGET yupiter::yupiter)
+    if(@HAVE_SHARED@)
+        add_library(yupiter::yupiter INTERFACE IMPORTED)
+        set_target_properties(yupiter::yupiter PROPERTIES
+            INTERFACE_LINK_LIBRARIES yupiter::yupiter_shared)
+    elseif(@HAVE_STATIC@)
+        add_library(yupiter::yupiter INTERFACE IMPORTED)
+        set_target_properties(yupiter::yupiter PROPERTIES
+            INTERFACE_LINK_LIBRARIES yupiter::yupiter_static)
+    else()
+        message(FATAL_ERROR
+            "yupiter: the package was installed without a library")
+    endif()
+endif()
+
+unset(_yupiter_prefix)
+unset(_yupiter_include)
+unset(_yupiter_libdir)
