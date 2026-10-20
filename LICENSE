@@ -1,7 +1,7 @@
-libstdoc - Licensing
+yupiter - Licensing
 ----------------------
 
-libstdoc is free software.  You may use, copy, modify and distribute
+yupiter is free software.  You may use, copy, modify and distribute
 it under your choice of one of the following three licenses:
 
   1. GNU General Public License, version 2 or any later version
@@ -22,13 +22,13 @@ Which one should I choose?
 ---------------------------
 
 * Choose the Apache License 2.0 if your project must link against
-  libstdoc statically, for example because shared objects or DLLs
+  yupiter statically, for example because shared objects or DLLs
   are not an option in your environment.  The Apache License imposes
   no conditions on linking at all, static or dynamic, and grants an
   explicit patent license from the contributors.
 
 * Choose the GNU Lesser General Public License (LGPLv2.1+) if you
-  link libstdoc through a shared library into your own program,
+  link yupiter through a shared library into your own program,
   including a proprietary or closed-source program, and keep your
   program under your own license.  The obligations of the LGPL apply
   to the library itself, not to the programs that use it.
