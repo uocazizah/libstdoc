@@ -1,0 +1,427 @@
+#!/bin/sh
+#
+# yupiter - configure the GNU Makefile build
+#
+# This script detects the target and writes config.mk, which the
+# Makefile includes.  It is deliberately small and POSIX: the project
+# needs no CMake, no Python and no generator to build.
+#
+# Usage:
+#
+#     ./configure [options]
+#
+#     --help                  show this message and exit
+#
+#     --prefix=PATH           installation prefix (default: /usr/local)
+#     --bindir=DIR            executables, relative to prefix (bin)
+#     --libdir=DIR            libraries, relative to prefix (lib)
+#     --includedir=DIR        headers, relative to prefix (include)
+#
+#     --arch=ARCH             target architecture: aarch64 or x86_64
+#     --cc=CC                 C compiler (default: cc)
+#     --cxx=CXX               C++ compiler (default: c++)
+#
+#     --build-type=TYPE       debug, release, relwithdebinfo or minsize
+#     --enable-static=yes|no  build libyupiter.a (default: yes)
+#     --enable-shared=yes|no  build libyupiter.so (default: yes)
+#     --enable-tests=yes|no   build the test programs (default: yes)
+#     --heap-size=BYTES       size of the static heap arena (default: 4096)
+#
+# A cross build passes --arch together with the cross compiler, for
+# example:
+#
+#     ./configure --arch=aarch64 \
+#         --cc=aarch64-linux-gnu-gcc --cxx=aarch64-linux-gnu-g++
+
+set -eu
+
+package=yupiter
+version_major=1
+version_minor=0
+version_patch=0
+version="${version_major}.${version_minor}.${version_patch}"
+soversion="${version_major}"
+
+prefix=/usr/local
+bindir=bin
+libdir=lib
+includedir=include
+
+target_arch=
+cc=${CC:-cc}
+cxx=${CXX:-c++}
+ar=${AR:-ar}
+ranlib=${RANLIB:-ranlib}
+nm=${NM:-nm}
+readelf=${READELF:-readelf}
+install=${INSTALL:-install}
+
+build_type=relwithdebinfo
+build_static=yes
+build_shared=yes
+build_tests=yes
+heap_size=4096
+
+usage()
+{
+    cat <<'EOF'
+Usage: ./configure [options]
+
+  --help                  show this message and exit
+  --prefix=PATH           installation prefix (default: /usr/local)
+  --bindir=DIR            executables, relative to prefix (default: bin)
+  --libdir=DIR            libraries, relative to prefix (default: lib)
+  --includedir=DIR        headers, relative to prefix (default: include)
+  --arch=ARCH             aarch64 or x86_64 (default: detected)
+  --cc=CC                 C compiler (default: cc)
+  --cxx=CXX               C++ compiler (default: c++)
+  --build-type=TYPE       debug, release, relwithdebinfo, minsize
+  --enable-static=yes|no  build libyupiter.a (default: yes)
+  --enable-shared=yes|no  build libyupiter.so (default: yes)
+  --enable-tests=yes|no   build the test programs (default: yes)
+  --heap-size=BYTES       static heap arena size (default: 4096)
+EOF
+}
+
+fail()
+{
+    echo "configure: $*" >&2
+    exit 1
+}
+
+for argument in "$@"
+do
+    case "${argument}" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --prefix=*)
+            prefix=${argument#*=}
+            ;;
+        --bindir=*)
+            bindir=${argument#*=}
+            ;;
+        --libdir=*)
+            libdir=${argument#*=}
+            ;;
+        --includedir=*)
+            includedir=${argument#*=}
+            ;;
+        --arch=*)
+            target_arch=${argument#*=}
+            ;;
+        --cc=*)
+            cc=${argument#*=}
+            ;;
+        --cxx=*)
+            cxx=${argument#*=}
+            ;;
+        --build-type=*)
+            build_type=${argument#*=}
+            ;;
+        --enable-static=*)
+            build_static=${argument#*=}
+            ;;
+        --enable-shared=*)
+            build_shared=${argument#*=}
+            ;;
+        --enable-tests=*)
+            build_tests=${argument#*=}
+            ;;
+        --heap-size=*)
+            heap_size=${argument#*=}
+            ;;
+        *)
+            fail "unknown option \"${argument}\"; try ./configure --help"
+            ;;
+    esac
+done
+
+case "${prefix}" in
+    /*)
+        ;;
+    *)
+        fail "the prefix \"${prefix}\" is not absolute"
+        ;;
+esac
+
+# config.mk is a make fragment, not a shell assignment: a whitespace,
+# a "#" or a "$" in a path would end the value or start a comment.  A
+# path that cannot be represented is refused here, before anything is
+# built, instead of producing a configuration that silently installs
+# somewhere else.
+for path in "${prefix}" "${bindir}" "${libdir}" "${includedir}"
+do
+    case "${path}" in
+        *[[:space:]]*|*'#'*|*'$'*)
+            fail "the path \"${path}\" contains a character that config.mk "
+            fail "cannot represent; use a path without spaces, # or $"
+            ;;
+    esac
+done
+
+for directory in "${bindir}" "${libdir}" "${includedir}"
+do
+    case "${directory}" in
+        /*)
+            fail "the installation directory \"${directory}\" must be "
+            fail "relative to the prefix; the CMake package derives it "
+            fail "from the installed location"
+            ;;
+    esac
+done
+
+case "${build_type}" in
+    debug|release|relwithdebinfo|minsize)
+        ;;
+    *)
+        fail "unknown build type \"${build_type}\"; use debug, release, "
+        fail "relwithdebinfo or minsize"
+        ;;
+esac
+
+for toggle in "${build_static}" "${build_shared}" "${build_tests}"
+do
+    case "${toggle}" in
+        yes|no)
+            ;;
+        *)
+            fail "\"${toggle}\" is not \"yes\" or \"no\""
+            ;;
+    esac
+done
+
+if [ "${build_static}" = no ] && [ "${build_shared}" = no ]
+then
+    fail "at least one of the static and shared libraries must be built"
+fi
+
+if [ "${build_tests}" = yes ] && [ "${build_static}" = no ]
+then
+    fail "the test programs link the static archive; enable it with "
+    fail "--enable-static=yes or disable the tests"
+fi
+
+case "${heap_size}" in
+    ''|*[!0-9]*)
+        fail "the heap size \"${heap_size}\" is not a whole number of bytes"
+        ;;
+esac
+
+if [ "${heap_size}" -lt 64 ]
+then
+    fail "the heap size ${heap_size} is smaller than the smallest arena "
+    fail "yupiter can build with (64 bytes)"
+fi
+
+operating_system=$(uname -s)
+
+if [ "${operating_system}" != Linux ]
+then
+    fail "unsupported operating system \"${operating_system}\"; only Linux "
+    fail "is implemented"
+fi
+
+if [ -z "${target_arch}" ]
+then
+    machine=$(uname -m)
+
+    case "${machine}" in
+        x86_64|amd64|AMD64)
+            target_arch=x86_64
+            ;;
+        aarch64|arm64|ARM64)
+            target_arch=aarch64
+            ;;
+        *)
+            fail "unsupported target architecture \"${machine}\"; "
+            fail "implemented: aarch64 and x86_64"
+            ;;
+    esac
+fi
+
+case "${target_arch}" in
+    x86_64|amd64|AMD64)
+        target_arch=x86_64
+        ;;
+    aarch64|arm64|ARM64)
+        target_arch=aarch64
+        ;;
+    *)
+        fail "unsupported target architecture \"${target_arch}\"; "
+        fail "implemented: aarch64 and x86_64"
+        ;;
+esac
+
+command -v "${cc}" >/dev/null 2>&1 ||
+    fail "the C compiler \"${cc}\" was not found"
+command -v "${cxx}" >/dev/null 2>&1 ||
+    fail "the C++ compiler \"${cxx}\" was not found"
+command -v "${ar}" >/dev/null 2>&1 ||
+    fail "the archiver \"${ar}\" was not found"
+command -v "${ranlib}" >/dev/null 2>&1 ||
+    fail "the indexer \"${ranlib}\" was not found"
+command -v "${nm}" >/dev/null 2>&1 ||
+    fail "the symbol tool \"${nm}\" was not found"
+command -v "${readelf}" >/dev/null 2>&1 ||
+    fail "the ELF reader \"${readelf}\" was not found"
+command -v "${install}" >/dev/null 2>&1 ||
+    fail "the install tool \"${install}\" was not found"
+
+compiler_name=$("${cxx}" --version 2>/dev/null | head -n 1 || true)
+
+case "${compiler_name}" in
+    *GCC*|*gcc*|*G++*|*g++*|*Clang*|*clang*)
+        ;;
+    *)
+        fail "the C++ compiler \"${cxx}\" is not GNU C++ or Clang: "
+        fail "${compiler_name:-unknown compiler}"
+        ;;
+esac
+
+# A target that does not match the compiler would be assembled for the
+# host and fail much later, inside an architecture-specific file, with
+# a message about a register or a mnemonic.  Refuse it here instead,
+# unless the compiler does not report a machine at all (some vendor
+# compilers do not implement -dumpmachine).
+compiler_machine=$("${cc}" -dumpmachine 2>/dev/null || true)
+
+case "${compiler_machine}" in
+    x86_64-*|amd64-*)
+        compiler_arch=x86_64
+        ;;
+    aarch64-*|arm64-*)
+        compiler_arch=aarch64
+        ;;
+    *)
+        compiler_arch=unknown
+        ;;
+esac
+
+if [ "${compiler_arch}" != unknown ] &&
+   [ "${compiler_arch}" != "${target_arch}" ]
+then
+    fail "the C compiler \"${cc}\" targets \"${compiler_machine}\", not "
+    fail "${target_arch}; pass a cross compiler with --cc and --cxx"
+fi
+
+# The implementation is ISO C++23 and freestanding, so the toolchain
+# has to provide the freestanding standard-library headers the code
+# includes.  The probe is compiled with the same runtime flags as the
+# library; a compiler that cannot compile it would otherwise fail much
+# later, inside an implementation file, with a less useful message.
+probe_dir=$(mktemp -d)
+
+trap 'rm -rf "${probe_dir}"' EXIT INT TERM
+
+cat > "${probe_dir}/probe.cxx" <<'EOF'
+#include <climits>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+
+constexpr std::size_t probe_alignment = alignof(std::max_align_t);
+constinit std::uintptr_t probe_pointer = 0;
+static_assert(INT_MAX > 0);
+
+extern "C" int probe(const char *format, ...);
+
+extern "C" int probe(const char *format, ...)
+{
+    va_list args;
+
+    va_start(args, format);
+    va_end(args);
+
+    return static_cast<int>(probe_pointer + probe_alignment) +
+           ((format != nullptr) ? 1 : 0);
+}
+EOF
+
+if ! "${cxx}" -std=c++23 -ffreestanding -fno-builtin -fno-stack-protector \
+        -fno-exceptions -fno-rtti -fno-threadsafe-statics \
+        -c "${probe_dir}/probe.cxx" -o "${probe_dir}/probe.o" \
+        > "${probe_dir}/probe.log" 2>&1
+then
+    echo "configure: the C++ compiler \"${cxx}\" cannot build the"
+    echo "freestanding C++23 implementation:"
+    echo
+    cat "${probe_dir}/probe.log"
+    echo
+    echo "The implementation needs <climits>, <cstdarg>, <cstddef> and"
+    echo "<cstdint> under -ffreestanding -fno-exceptions -fno-rtti;"
+    echo "libstdc++ provides them from GCC 13 on."
+    exit 1
+fi
+
+# The static library needs the startup file of the target; a cross
+# build that names an architecture the repository does not implement
+# has already been refused above.
+for source in "assembly/yupiter_start_${target_arch}.S" \
+              "assembly/yupiter_syscall_${target_arch}.S" \
+              "assembly/yupiter_syscall3_${target_arch}.S"
+do
+    if [ ! -f "${source}" ]
+    then
+        fail "the target \"${target_arch}\" has no \"${source}\""
+    fi
+done
+
+# Write config.mk.  The values are written unquoted because every one
+# of them is a single word or an absolute path without spaces, and the
+# Makefile uses them as make variables.
+cat > config.mk <<EOF
+# Generated by ./configure.  Do not edit this file: re-run ./configure
+# with different options instead.
+
+PACKAGE         := ${package}
+VERSION         := ${version}
+VERSION_MAJOR   := ${version_major}
+VERSION_MINOR   := ${version_minor}
+VERSION_PATCH   := ${version_patch}
+SOVERSION       := ${soversion}
+
+TARGET_OS       := linux
+TARGET_ARCH     := ${target_arch}
+
+CC              := ${cc}
+CXX             := ${cxx}
+AR              := ${ar}
+RANLIB          := ${ranlib}
+NM              := ${nm}
+READELF         := ${readelf}
+INSTALL         := ${install}
+
+PREFIX          := ${prefix}
+BINDIR_REL      := ${bindir}
+LIBDIR_REL      := ${libdir}
+INCLUDEDIR_REL  := ${includedir}
+
+BINDIR          := \$(PREFIX)/\$(BINDIR_REL)
+LIBDIR          := \$(PREFIX)/\$(LIBDIR_REL)
+INCLUDEDIR      := \$(PREFIX)/\$(INCLUDEDIR_REL)
+PKGCONFIGDIR    := \$(LIBDIR)/pkgconfig
+CMAKEDIR        := \$(LIBDIR)/cmake/yupiter
+
+BUILD_TYPE      := ${build_type}
+BUILD_STATIC    := ${build_static}
+BUILD_SHARED    := ${build_shared}
+BUILD_TESTS     := ${build_tests}
+HEAP_SIZE       := ${heap_size}
+EOF
+
+echo "yupiter ${version} configured"
+echo
+echo "  target          Linux/${target_arch}"
+echo "  C compiler      ${cc}"
+echo "  C++ compiler    ${cxx}"
+echo "  build type      ${build_type}"
+echo "  static library  ${build_static}"
+echo "  shared library  ${build_shared}"
+echo "  tests           ${build_tests}"
+echo "  heap arena      ${heap_size} bytes"
+echo "  prefix          ${prefix}"
+echo
+echo "Run \"make\" to build, \"make check\" to test and \"make install\""
+echo "to install."
