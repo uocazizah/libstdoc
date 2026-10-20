@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -37,7 +37,7 @@
  * be missing at link time or, worse, silently resolve to a different
  * implementation than the one under test.  The helpers below are
  * therefore defined here and prefixed so that they never collide with
- * a host C library when libstdoc is linked into a hosted program.
+ * a host C library when yupiter is linked into a hosted program.
  *
  * The definitions carry the C linkage the internal header declares, so
  * the C test programs can link them under their unmangled names.
@@ -47,12 +47,12 @@
 
 #include <cstddef>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
-namespace stdoc::io
+namespace yupiter::io
 {
 
-extern "C" std::size_t stdoc_strlen(const char *p_string)
+extern "C" std::size_t yupiter_strlen(const char *p_string)
 {
     const char *p_cursor;
 
@@ -77,7 +77,7 @@ extern "C" std::size_t stdoc_strlen(const char *p_string)
     return static_cast<std::size_t>(p_cursor - p_string);
 }
 
-extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
+extern "C" void *yupiter_memcpy(void *p_destination, const void *p_source,
                               std::size_t length)
 {
     /*
@@ -143,7 +143,7 @@ extern "C" void *stdoc_memcpy(void *p_destination, const void *p_source,
     return p_destination;
 }
 
-extern "C" void *stdoc_memset(void *p_destination, int value,
+extern "C" void *yupiter_memset(void *p_destination, int value,
                               std::size_t length)
 {
     constexpr std::size_t block_size = 16;
@@ -161,7 +161,7 @@ extern "C" void *stdoc_memset(void *p_destination, int value,
 
     /*
      * Fill one block once and store it repeatedly.  As in
-     * stdoc_memcpy, the local byte array is what lets the compiler
+     * yupiter_memcpy, the local byte array is what lets the compiler
      * turn the loop into a wide store without a cast that would break
      * the aliasing rules.
      */
@@ -197,4 +197,4 @@ extern "C" void *stdoc_memset(void *p_destination, int value,
     return p_destination;
 }
 
-} /* namespace stdoc::io */
+} /* namespace yupiter::io */
