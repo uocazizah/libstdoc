@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,7 +30,7 @@
  */
 
 /*
- * The formatting engine behind stdoc_printf and stdoc_fprintf.
+ * The formatting engine behind yupiter_printf and yupiter_fprintf.
  *
  * The parser and the formatter are kept in one translation unit on
  * purpose: the specification has to be fully known before any byte is
@@ -38,11 +38,11 @@
  * specification to be marshalled through a second interface.
  *
  * Everything this file needs from the platform is the stream interface
- * and the heap, declared in "stdoc_io.hxx" and "<libstdoc.h>", so the
+ * and the heap, declared in "yupiter_io.hxx" and "<yupiter.h>", so the
  * file compiles unchanged on any target that provides them.
  *
  * The scratch buffers of the formatting engine are borrowed from the
- * libstdoc heap for the duration of one formatted call and fall back
+ * yupiter heap for the duration of one formatted call and fall back
  * to stack storage when the heap is exhausted; no other allocation is
  * made here.
  *
@@ -54,8 +54,8 @@
  * from that point on; emitting nothing is the least surprising choice
  * here.
  *
- * "stdoc_vfprintf" carries the C linkage the internal header declares,
- * so stdoc_printf and stdoc_fprintf reach it under its unmangled name.
+ * "yupiter_vfprintf" carries the C linkage the internal header declares,
+ * so yupiter_printf and yupiter_fprintf reach it under its unmangled name.
  */
 
 #include <climits>
@@ -63,9 +63,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
-namespace stdoc::io
+namespace yupiter::io
 {
 
 namespace
@@ -123,8 +123,8 @@ constexpr std::size_t digit_storage = 65;
  * Size of the chunk used to stage a run of padding characters, and
  * the size of the scratch block that carries both of these buffers.
  *
- * The scratch block comes from the libstdoc heap for the duration of
- * a formatted call (see stdoc_vfprintf) so that the two arrays do not
+ * The scratch block comes from the yupiter heap for the duration of
+ * a formatted call (see yupiter_vfprintf) so that the two arrays do not
  * have to live on the stack.  A call that cannot allocate simply uses
  * stack buffers of the same size, so an exhausted heap costs stack
  * space rather than correctness.
@@ -146,16 +146,16 @@ constexpr std::size_t scratch_size = digit_storage + scratch_chunk;
  * its own stack buffer.
  *
  * "p_chunk" is that padding chunk - the tail of the scratch block, or
- * the chunk_storage array in the frame of stdoc_vfprintf when the heap
+ * the chunk_storage array in the frame of yupiter_vfprintf when the heap
  * had nothing to spare - and "chunk_value" is the character it holds,
  * so that a run of padding is filled once for the whole call instead
  * of once per conversion.  Zero is its "not filled yet" value, which
  * no padding character can be: padding is only ever a space or a
  * zero.
  */
-struct stdoc_output
+struct yupiter_output
 {
-    stdoc_FILE *stream;
+    yupiter_FILE *stream;
     int         count;
     bool        failed;
     char       *p_scratch;
@@ -167,7 +167,7 @@ struct stdoc_output
 /*
  * One parsed conversion specification.
  */
-struct stdoc_spec
+struct yupiter_spec
 {
     unsigned int    flags;
     int             width;
@@ -178,14 +178,14 @@ struct stdoc_spec
 
 /*
  * Give the borrowed scratch block back.  Every path out of
- * stdoc_vfprintf calls this, so a formatted call can never leave the
+ * yupiter_vfprintf calls this, so a formatted call can never leave the
  * heap holding a block.
  */
-void output_release_scratch(stdoc_output *p_output)
+void output_release_scratch(yupiter_output *p_output)
 {
     if (p_output->scratch_from_heap)
     {
-        stdoc_free(p_output->p_scratch);
+        yupiter_free(p_output->p_scratch);
         p_output->p_scratch = nullptr;
         p_output->scratch_from_heap = false;
     }
@@ -196,7 +196,7 @@ void output_release_scratch(stdoc_output *p_output)
  * INT_MAX before anything is written so that the documented return
  * type can never overflow.
  */
-void output_write(stdoc_output *p_output, const char *p_bytes,
+void output_write(yupiter_output *p_output, const char *p_bytes,
                   std::size_t length)
 {
     if (p_output->failed)
@@ -215,7 +215,7 @@ void output_write(stdoc_output *p_output, const char *p_bytes,
         return;
     }
 
-    if (stdoc_stream_write(p_output->stream, p_bytes, length) != 0)
+    if (yupiter_stream_write(p_output->stream, p_bytes, length) != 0)
     {
         p_output->failed = true;
         return;
@@ -234,7 +234,7 @@ void output_write(stdoc_output *p_output, const char *p_bytes,
  * the spaces that are already there, and only a change of character -
  * which happens when a conversion pads with zeros - costs a refill.
  */
-void output_repeat(stdoc_output *p_output, char value, std::size_t count)
+void output_repeat(yupiter_output *p_output, char value, std::size_t count)
 {
     std::size_t index;
 
@@ -271,8 +271,8 @@ void output_repeat(stdoc_output *p_output, char value, std::size_t count)
  * Negative or zero width means "no padding".  The '-' flag aligns to
  * the left, which turns the padding into trailing spaces.
  */
-void output_field(stdoc_output *p_output, const char *p_text,
-                  std::size_t length, const stdoc_spec *p_spec)
+void output_field(yupiter_output *p_output, const char *p_text,
+                  std::size_t length, const yupiter_spec *p_spec)
 {
     std::size_t padding;
     std::size_t field_width;
@@ -327,12 +327,14 @@ void output_field(stdoc_output *p_output, const char *p_text,
  * would read past the digits into whatever the previous call left
  * there.
  */
-const char *render_integer(std::uintmax_t value, unsigned int base,
-                           bool uppercase, char *p_storage,
-                           std::size_t storage_size, std::size_t *p_length)
+constexpr char lower_digits[] = "0123456789abcdef";
+constexpr char upper_digits[] = "0123456789ABCDEF";
+
+constexpr const char *render_integer(std::uintmax_t value, unsigned int base,
+                                     bool uppercase, char *p_storage,
+                                     std::size_t storage_size,
+                                     std::size_t *p_length)
 {
-    static constexpr char lower_digits[] = "0123456789abcdef";
-    static constexpr char upper_digits[] = "0123456789ABCDEF";
     const char *p_digits;
     std::size_t index;
 
@@ -373,7 +375,7 @@ const char *render_integer(std::uintmax_t value, unsigned int base,
  * and placed after the sign, which is what makes "%-8.4d" and
  * "%08.4d" differ only in alignment.
  */
-void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
+void output_number(yupiter_output *p_output, const yupiter_spec *p_spec,
                    std::uintmax_t magnitude, bool negative,
                    unsigned int base, bool uppercase)
 {
@@ -582,7 +584,7 @@ void output_number(stdoc_output *p_output, const stdoc_spec *p_spec,
  *
  * Returns 0 on success and -1 when the digits did not fit.
  */
-int parse_decimal(const char **pp_format, int *p_value)
+constexpr int parse_decimal(const char **pp_format, int *p_value)
 {
     const char   *p_cursor;
     unsigned long accumulator;
@@ -629,8 +631,9 @@ constexpr bool is_digit_character(char value) noexcept
  * "value + 1" is evaluated before the negation so that the most
  * negative value of the type does not overflow when negated.
  */
-void normalize_signed(std::intmax_t value, std::uintmax_t *p_magnitude,
-                      bool *p_negative)
+constexpr void normalize_signed(std::intmax_t value,
+                                std::uintmax_t *p_magnitude,
+                                bool *p_negative)
 {
     if (value < 0)
     {
@@ -645,13 +648,59 @@ void normalize_signed(std::intmax_t value, std::uintmax_t *p_magnitude,
     }
 }
 
+/*
+ * The parser and the number renderer are useful at compile time too:
+ * an implementation-defined detail such as the position of the null
+ * terminator can then be checked by the compiler instead of only by a
+ * run-time test.
+ */
+static_assert([] {
+    char        storage[8] = {};
+    std::size_t length = 0;
+    const char *p_digits = render_integer(42U, 16U, false, storage,
+                                          sizeof storage, &length);
+
+    return (length == 2U) && (p_digits == (storage + 6)) &&
+           (p_digits[0] == '2') && (p_digits[1] == 'a') &&
+           (p_digits[-1] == '\0');
+}(), "render_integer must render 42 as 2a followed by a terminator");
+
+static_assert([] {
+    char        storage[4] = {};
+    std::size_t length = 0;
+    const char *p_digits = render_integer(0U, 10U, false, storage,
+                                          sizeof storage, &length);
+
+    return (length == 1U) && (p_digits[0] == '0') &&
+           (p_digits[-1] == '\0');
+}(), "render_integer must render zero as one digit");
+
+static_assert([] {
+    const char *p_format = "120x";
+    int         value = 0;
+
+    return (parse_decimal(&p_format, &value) == 0) && (value == 120) &&
+           (p_format[0] == 'x');
+}(), "parse_decimal must stop at the first non-digit");
+
+static_assert([] {
+    std::uintmax_t magnitude = 0;
+    bool           negative = false;
+
+    normalize_signed(static_cast<std::intmax_t>(INTMAX_MIN), &magnitude,
+                     &negative);
+
+    return negative &&
+           (magnitude == (static_cast<std::uintmax_t>(INTMAX_MAX) + 1U));
+}(), "normalize_signed must handle INTMAX_MIN without overflow");
+
 } /* namespace */
 
-extern "C" int stdoc_vfprintf(stdoc_FILE *stream, const char *format,
+extern "C" int yupiter_vfprintf(yupiter_FILE *stream, const char *format,
                               va_list args)
 {
-    stdoc_output   output;
-    stdoc_spec     spec;
+    yupiter_output   output;
+    yupiter_spec     spec;
     const char    *p_format;
     char           chunk_storage[scratch_chunk];
     std::size_t    run_length;
@@ -674,7 +723,7 @@ extern "C" int stdoc_vfprintf(stdoc_FILE *stream, const char *format,
      * the same size, so an exhausted heap costs stack space rather
      * than a failed conversion.
      */
-    output.p_scratch = static_cast<char *>(stdoc_malloc(scratch_size));
+    output.p_scratch = static_cast<char *>(yupiter_malloc(scratch_size));
     output.scratch_from_heap = (output.p_scratch != nullptr);
 
     /*
@@ -1057,7 +1106,7 @@ extern "C" int stdoc_vfprintf(stdoc_FILE *stream, const char *format,
 
                     if (spec.precision < 0)
                     {
-                        length = stdoc_strlen(p_string);
+                        length = yupiter_strlen(p_string);
                     }
                     else
                     {
@@ -1094,4 +1143,4 @@ extern "C" int stdoc_vfprintf(stdoc_FILE *stream, const char *format,
     return output.count;
 }
 
-} /* namespace stdoc::io */
+} /* namespace yupiter::io */
