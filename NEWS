@@ -1,5 +1,118 @@
-libstdoc news
+yupiter news
 ===============
+
+1.0.0
+-----
+
+Released 20 October 2026.
+
+This is the first stable release of yupiter, the project formerly
+released as libstdoc.  The rename is complete: the installed headers
+are <yupiter.h> and <yupiter.hpp>, every exported symbol begins with
+"yupiter_", every macro with "YUPITER_", the C++ namespace is
+"yupiter", and the libraries are libyupiter.a and libyupiter.so.  The
+version restarts at 1.0.0 and the shared object has SOVERSION 1.
+
+The shape of the library is unchanged: the public interface is ISO
+C17, the implementation is ISO C++23 compiled freestanding, a program
+written in C and a program written in C++ link the same archive, and
+the static archive still supplies its own entry point without a C
+library or a C++ runtime.  Within the 1.x series the exported symbols,
+their signatures, their C linkage and the public structure layouts are
+stable; a change that breaks them requires a new major version.
+
+The entries below this one are the history of libstdoc and keep the
+names, symbol prefixes and version numbers with which they were
+released.
+
+Library
+~~~~~~~
+
+  * The allocator gains yupiter_realloc and yupiter_realloc_safe.
+    yupiter_realloc resizes a live block, growing or shrinking it in
+    place when the surrounding free space allows and moving it only
+    when it cannot; a null pointer allocates and a size of 0 releases,
+    as C17 permits.  The safe variant checks "count * size" for
+    overflow and terminates with the documented status 134 on an
+    invalid pointer, an overflowing size or an exhausted heap.  Added
+    bytes of a growing resize are not initialised, and the public
+    contract says so.
+  * The three-argument system-call trampoline lives in
+    assembly/yupiter_syscall3_aarch64.S and
+    assembly/yupiter_syscall3_x86_64.S, while the six-argument form
+    stays in the other trampoline files.  The split keeps the calls the
+    platform layer actually makes free of the extra argument moves and
+    of the stack argument on x86_64.
+  * yupiter_stream_write bypasses the staging buffer when nothing is
+    staged and either the stream is unbuffered or the payload is larger
+    than YUPITER_BUFFER_SIZE, so a large buffered payload reaches the
+    kernel in one call.
+
+Interface
+~~~~~~~~~
+
+  * include/yupiter.h defines YUPITER_VERSION_MAJOR,
+    YUPITER_VERSION_MINOR, YUPITER_VERSION_PATCH and
+    YUPITER_VERSION_STRING, so a consumer can check at compile time
+    which release it was built against.
+  * The library is compiled with "-fvisibility=hidden" and the public
+    declarations carry YUPITER_PUBLIC; the shared object therefore
+    exports the documented C interface and nothing else.
+  * include/yupiter.hpp remains the C++ entry point: it re-exposes the
+    C17 interface and adds no symbol, type or runtime requirement.
+
+Build
+~~~~~
+
+  * The CMake build is replaced by a GNU Makefile driven by a POSIX
+    ./configure script.  ./configure detects Linux and the target
+    architecture, validates that the compiler can build the freestanding
+    C++23 implementation, and writes config.mk; make then builds both
+    libraries by default.
+  * libyupiter.a is the freestanding archive and includes the startup
+    file.  libyupiter.so.1.0.0 is the hosted shared object: it excludes
+    the startup file, has SONAME libyupiter.so.1, and names no C
+    library or C++ runtime it needs.
+  * The install rules provide pkg-config metadata and a hand-written
+    CMake package configuration for consumers that use CMake.  Neither
+    is needed to build the project, and no CMake is required on the
+    build host.
+  * The test harness is a set of POSIX shell scripts run by "make
+    check"; CTest and the CMake test modules are gone.  The common
+    warning list is spelled once per language, and warnings are errors.
+  * Both libraries are built by default and can be selected separately
+    with --enable-static and --enable-shared; the tests can be disabled
+    with --enable-tests, and --build-type selects debug, release,
+    relwithdebinfo or minsize.
+
+Tests
+~~~~~
+
+  * short_write_retry replaces the three-argument trampoline for one
+    test and scripts short, zero, oversized and failing write results,
+    so the retry loop in yupiter_sys_write is exercised instead of only
+    inspected.  A per-architecture rawsyscall helper forwards every
+    unscripted call to the real kernel entry.
+  * string_checks covers the null and zero-length cases of the internal
+    length, copy and fill helpers.
+  * The heap tests cover growth into the free tail, shrink with a
+    split, an obstructed move, null and zero sizes, and the fatal
+    failures of yupiter_realloc_safe.
+  * The install test stages a DESTDIR installation and builds a
+    consumer against the installed pkg-config metadata and, when CMake
+    is available, the installed CMake package.
+
+Packaging
+~~~~~~~~~
+
+  * Installed files: include/yupiter.h, include/yupiter.hpp,
+    lib/libyupiter.a, lib/libyupiter.so.1.0.0 with the .so.1 and .so
+    links, lib/pkgconfig/yupiter.pc and lib/cmake/yupiter/.
+  * Supported targets are Linux on aarch64 and Linux on x86_64.  Any
+    other operating system or architecture is rejected by ./configure
+    instead of being mapped onto an implementation that does not match
+    it.
+
 
 2.0.1-beta
 ----------
