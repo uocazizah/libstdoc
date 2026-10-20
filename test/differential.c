@@ -1,5 +1,5 @@
 /*
- * libstdoc - differential formatting test
+ * yupiter - differential formatting test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,8 +30,8 @@
  */
 
 /*
- * The same source is compiled twice: once with -DSTDOC_REFERENCE, when
- * the calls go to the host C library, and once linked against libstdoc.
+ * The same source is compiled twice: once with -DYUPITER_REFERENCE, when
+ * the calls go to the host C library, and once linked against yupiter.
  * CompareTwo.cmake runs both programs and compares their output byte
  * for byte, so a divergence is reported as a failing test on the spot.
  *
@@ -41,7 +41,7 @@
  * cases are built at run time, so every combination of flags, width and
  * precision is covered without the file growing with them, and the
  * reference the output is compared against is a live one rather than a
- * file someone could regenerate from libstdoc by mistake.
+ * file someone could regenerate from yupiter by mistake.
  *
  * Every case prints the value the call returned as well as what it
  * wrote, so the return-count contract is compared too.  The program
@@ -53,13 +53,23 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef STDOC_REFERENCE
+#ifdef YUPITER_REFERENCE
 #include <stdio.h>
 #define PRINT printf
 #else
-#include <libstdoc.h>
-#define PRINT stdoc_printf
+#include <yupiter.h>
+#define PRINT yupiter_printf
 #endif
+
+/*
+ * Calls whose format string deliberately exercises behaviour the C
+ * standard leaves undefined go through this pointer, so the compiler's
+ * format check does not reject the comparison.
+ */
+typedef int (*print_function)(const char *, ...);
+static print_function volatile print_unchecked = PRINT;
+
+#define PRINT_UNDEFINED(...) print_unchecked(__VA_ARGS__)
 
 #define COUNT_OF(array) (sizeof(array) / sizeof((array)[0]))
 
@@ -242,21 +252,21 @@ static void literal_cases(void)
     report(PRINT("[%*.*d]\n", 8, 3, -42));
 
     /* Null strings and null pointers. */
-    report(PRINT("[%s]\n", (const char *)NULL));
-    report(PRINT("[%.2s]\n", (const char *)NULL));
-    report(PRINT("[%.9s]\n", (const char *)NULL));
-    report(PRINT("[%10s]\n", (const char *)NULL));
+    report(PRINT_UNDEFINED("[%s]\n", (const char *)NULL));
+    report(PRINT_UNDEFINED("[%.2s]\n", (const char *)NULL));
+    report(PRINT_UNDEFINED("[%.9s]\n", (const char *)NULL));
+    report(PRINT_UNDEFINED("[%10s]\n", (const char *)NULL));
     report(PRINT("[%p]\n", (void *)NULL));
     report(PRINT("[%20p]\n", (void *)NULL));
 
     /* Signs on a pointer, which the reference library prints. */
-    report(PRINT("[%+p]\n", (void *)0x1234));
-    report(PRINT("[% p]\n", (void *)0x1234));
+    report(PRINT_UNDEFINED("[%+p]\n", (void *)0x1234));
+    report(PRINT_UNDEFINED("[% p]\n", (void *)0x1234));
 
     /* No conversion at all, and the literal percent. */
     report(PRINT("no conversions here\n"));
     report(PRINT("[%%][%d]\n", 1));
-    report(PRINT(""));
+    report(PRINT_UNDEFINED(""));
 }
 
 int main(void)
