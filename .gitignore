@@ -97,16 +97,18 @@ dkms.conf
 *.out
 *.app
 
+# yupiter build
+config.mk
+
 # Build directories
 build/
 Build/
 build-*/
 
-# CMake generated files
+# CMake generated files (for consumers that use CMake)
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
-Makefile
 install_manifest.txt 
 compile_commands.json
 
@@ -121,23 +123,6 @@ vcpkg_installed/
 
 # debug information files
 *.dwo
-
-# test output & cache
-Testing/
-.cache/
-# ---> CMake
-CMakeLists.txt.user
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-Testing
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
-CMakeUserPresets.json
 
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
