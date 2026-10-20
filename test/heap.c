@@ -1,5 +1,5 @@
 /*
- * libstdoc - heap and leak test
+ * yupiter - heap and leak test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -32,11 +32,11 @@
  * The heap, exercised with small allocations only.
  *
  * The arena is 4096 bytes by default, so anything this test leaks
- * stays a few kilobytes at most, and the accounting in stdoc_mem.hxx
+ * stays a few kilobytes at most, and the accounting in yupiter_mem.hxx
  * turns any leak into a failing check: after every scenario the live
  * byte and block counts must be back at zero.  The exhaustion scenario
  * deliberately fills the arena to prove that a full heap behaves -
- * stdoc_malloc reports it, printf falls back to its stack buffer, and
+ * yupiter_malloc reports it, printf falls back to its stack buffer, and
  * releasing everything restores the whole arena.
  *
  * Each check adds to a counter that becomes the exit status, so the
@@ -46,8 +46,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "stdoc_io.hxx"
-#include "stdoc_mem.hxx"
+#include "yupiter_io.hxx"
+#include "yupiter_mem.hxx"
 
 static int failures;
 
@@ -59,7 +59,7 @@ static void check(int condition, const char *p_what)
     if (condition == 0)
     {
         failures = failures + 1;
-        stdoc_fprintf(stdoc_stderr, "FAIL: %s\n", p_what);
+        yupiter_fprintf(yupiter_stderr, "FAIL: %s\n", p_what);
     }
 }
 
@@ -72,13 +72,13 @@ static void test_allocation_and_release(void)
     void  *p_zero;
     void  *p_small;
 
-    p_zero = stdoc_malloc(0);
+    p_zero = yupiter_malloc(0);
     check(p_zero == NULL, "malloc of zero bytes returns NULL");
 
-    p_small = stdoc_malloc(1);
+    p_small = yupiter_malloc(1);
     check(p_small != NULL, "malloc of one byte returns a pointer");
-    check(stdoc_heap_live_blocks() == 1, "a live block is counted");
-    check(stdoc_heap_live_bytes() > 0, "live bytes are counted");
+    check(yupiter_heap_live_blocks() == 1, "a live block is counted");
+    check(yupiter_heap_live_bytes() > 0, "live bytes are counted");
 
     if (p_small != NULL)
     {
@@ -86,9 +86,9 @@ static void test_allocation_and_release(void)
               "a payload is aligned for any object");
     }
 
-    stdoc_free(p_small);
-    check(stdoc_heap_live_blocks() == 0, "release drops the block count");
-    check(stdoc_heap_live_bytes() == 0, "release drops the byte count");
+    yupiter_free(p_small);
+    check(yupiter_heap_live_blocks() == 0, "release drops the block count");
+    check(yupiter_heap_live_bytes() == 0, "release drops the byte count");
 }
 
 /*
@@ -108,7 +108,7 @@ static size_t take_blocks(unsigned char *p_blocks[], size_t wanted,
 
     for (count = 0; count < wanted; count = count + 1)
     {
-        p_blocks[count] = (unsigned char *)stdoc_malloc(payload);
+        p_blocks[count] = (unsigned char *)yupiter_malloc(payload);
 
         if (p_blocks[count] == NULL)
         {
@@ -125,7 +125,7 @@ static void release_blocks(unsigned char *p_blocks[], size_t count)
 
     for (index = 0; index < count; index = index + 1)
     {
-        stdoc_free(p_blocks[index]);
+        yupiter_free(p_blocks[index]);
         p_blocks[index] = NULL;
     }
 }
@@ -165,7 +165,7 @@ static void test_blocks_do_not_overlap(void)
 
     for (index = 0; index < count; index = index + 1)
     {
-        (void)stdoc_memset(p_blocks[index], (int)(0xA0u + index), payload);
+        (void)yupiter_memset(p_blocks[index], (int)(0xA0u + index), payload);
     }
 
     intact = 1;
@@ -184,12 +184,12 @@ static void test_blocks_do_not_overlap(void)
 
     release_blocks(p_blocks, count);
 
-    check(stdoc_heap_live_bytes() == 0, "every block was released");
+    check(yupiter_heap_live_bytes() == 0, "every block was released");
 }
 
 /*
  * Pointers that are not the start of a live block are ignored by
- * stdoc_free: the heap is left exactly as it was, including when the
+ * yupiter_free: the heap is left exactly as it was, including when the
  * same block is released twice.
  */
 static void test_invalid_free_is_ignored(void)
@@ -197,7 +197,7 @@ static void test_invalid_free_is_ignored(void)
     void  *p_block;
     size_t before;
 
-    p_block = stdoc_malloc(16);
+    p_block = yupiter_malloc(16);
     check(p_block != NULL, "a block for the invalid frees is available");
 
     if (p_block == NULL)
@@ -205,22 +205,22 @@ static void test_invalid_free_is_ignored(void)
         return;
     }
 
-    before = stdoc_heap_live_bytes();
+    before = yupiter_heap_live_bytes();
 
-    stdoc_free((char *)p_block + 1);
-    stdoc_free((char *)p_block + 16);
-    stdoc_free((void *)(uintptr_t)0x1234);
+    yupiter_free((char *)p_block + 1);
+    yupiter_free((char *)p_block + 16);
+    yupiter_free((void *)(uintptr_t)0x1234);
 
-    check(stdoc_heap_live_bytes() == before,
+    check(yupiter_heap_live_bytes() == before,
           "an invalid free leaves the heap unchanged");
 
-    stdoc_free(p_block);
-    check(stdoc_heap_live_bytes() == 0, "the valid free still works");
+    yupiter_free(p_block);
+    check(yupiter_heap_live_bytes() == 0, "the valid free still works");
 
-    stdoc_free(p_block);
-    check(stdoc_heap_live_bytes() == 0, "a double free changes nothing");
-    stdoc_free(NULL);
-    check(stdoc_heap_live_bytes() == 0, "freeing NULL changes nothing");
+    yupiter_free(p_block);
+    check(yupiter_heap_live_bytes() == 0, "a double free changes nothing");
+    yupiter_free(NULL);
+    check(yupiter_heap_live_bytes() == 0, "freeing NULL changes nothing");
 }
 
 /*
@@ -246,7 +246,7 @@ static void test_exhaustion_and_release(void)
      * is remembered in the payload itself, so the list of blocks costs
      * no storage of its own and works for any arena size.
      */
-    payload = stdoc_heap_capacity() / 16u;
+    payload = yupiter_heap_capacity() / 16u;
 
     if (payload < 16u)
     {
@@ -258,7 +258,7 @@ static void test_exhaustion_and_release(void)
 
     for (;;)
     {
-        p_block = stdoc_malloc(payload);
+        p_block = yupiter_malloc(payload);
 
         if (p_block == NULL)
         {
@@ -271,9 +271,9 @@ static void test_exhaustion_and_release(void)
     }
 
     check(count > 0, "the heap serves allocations");
-    check(stdoc_malloc(payload) == NULL, "an exhausted heap reports NULL");
+    check(yupiter_malloc(payload) == NULL, "an exhausted heap reports NULL");
 
-    written = stdoc_printf("heap exhausted, falling back: %d\n", 42);
+    written = yupiter_printf("heap exhausted, falling back: %d\n", 42);
     check(written > 0,
           "printf still works when the heap has nothing left");
 
@@ -281,16 +281,16 @@ static void test_exhaustion_and_release(void)
     {
         p_block = p_head;
         p_head = *(void **)p_head;
-        stdoc_free(p_block);
+        yupiter_free(p_block);
     }
 
-    check(stdoc_heap_live_blocks() == 0, "every block was released");
-    check(stdoc_heap_live_bytes() == 0, "every byte was released");
+    check(yupiter_heap_live_blocks() == 0, "every block was released");
+    check(yupiter_heap_live_bytes() == 0, "every byte was released");
 
-    p_large = stdoc_malloc(stdoc_heap_capacity() - (stdoc_heap_capacity() / 4u));
+    p_large = yupiter_malloc(yupiter_heap_capacity() - (yupiter_heap_capacity() / 4u));
     check(p_large != NULL, "free blocks are merged back into one");
-    stdoc_free(p_large);
-    check(stdoc_heap_live_bytes() == 0, "the merged block was released");
+    yupiter_free(p_large);
+    check(yupiter_heap_live_bytes() == 0, "the merged block was released");
 }
 
 /*
@@ -302,17 +302,17 @@ static void test_printf_releases_its_scratch(void)
     int written;
 
     written = 0;
-    written = written + stdoc_printf("[%d][%i][%u]\n", -42, 42, 42u);
-    written = written + stdoc_printf("[%x][%X][%o][%c]\n", 255u, 255u, 8u, 'Z');
-    written = written + stdoc_printf("[%10.4d][%-8u][%s]\n", 1234, 99u, "text");
-    written = written + stdoc_printf("[%20s][%.3s][%%]\n", "wide", "abcdef");
-    written = written + stdoc_printf("[%20d][%-20d][%08d][%.4d]\n", 7, 7, 7, 7);
-    written = written + stdoc_printf("[%p][%s]\n", (void *)0, (const char *)NULL);
+    written = written + yupiter_printf("[%d][%i][%u]\n", -42, 42, 42u);
+    written = written + yupiter_printf("[%x][%X][%o][%c]\n", 255u, 255u, 8u, 'Z');
+    written = written + yupiter_printf("[%10.4d][%-8u][%s]\n", 1234, 99u, "text");
+    written = written + yupiter_printf("[%20s][%.3s][%%]\n", "wide", "abcdef");
+    written = written + yupiter_printf("[%20d][%-20d][%08d][%.4d]\n", 7, 7, 7, 7);
+    written = written + yupiter_printf("[%p][%s]\n", (void *)0, (const char *)NULL);
 
     check(written > 0, "the formatted calls produced output");
-    check(stdoc_heap_live_blocks() == 0,
+    check(yupiter_heap_live_blocks() == 0,
           "printf left no block behind");
-    check(stdoc_heap_live_bytes() == 0,
+    check(yupiter_heap_live_bytes() == 0,
           "printf left no byte behind");
 }
 
@@ -335,7 +335,7 @@ static void test_safe_allocation(void)
      * blocks of 16 bytes, capped at the 64 bytes this scenario has
      * always asked for.
      */
-    total = stdoc_heap_capacity() / 4u;
+    total = yupiter_heap_capacity() / 4u;
     count = total / 16u;
 
     if (count == 0)
@@ -350,9 +350,9 @@ static void test_safe_allocation(void)
         count = 4u;
     }
 
-    p_block = stdoc_malloc_safe(count, 16);
+    p_block = yupiter_malloc_safe(count, 16);
     check(p_block != NULL, "malloc_safe returns a pointer");
-    check(stdoc_heap_live_bytes() == total,
+    check(yupiter_heap_live_bytes() == total,
           "malloc_safe reserves the whole request");
 
     all_zero = 1;
@@ -368,13 +368,260 @@ static void test_safe_allocation(void)
     }
     check(all_zero != 0, "malloc_safe returns zeroed memory");
 
-    p_nothing = stdoc_malloc_safe(0, 16);
+    p_nothing = yupiter_malloc_safe(0, 16);
     check(p_nothing == NULL, "a request for nothing allocates nothing");
 
-    stdoc_free_safe(p_block);
-    check(stdoc_heap_live_bytes() == 0, "free_safe released the block");
-    stdoc_free_safe(NULL);
-    check(stdoc_heap_live_bytes() == 0, "free_safe ignores NULL");
+    yupiter_free_safe(p_block);
+    check(yupiter_heap_live_bytes() == 0, "free_safe released the block");
+    yupiter_free_safe(NULL);
+    check(yupiter_heap_live_bytes() == 0, "free_safe ignores NULL");
+}
+
+/*
+ * Fill a buffer with a recognisable pattern and compare it again.  The
+ * seed differs between scenarios, so a block that returns bytes from
+ * another block is visible rather than matching by accident.
+ */
+static void fill_bytes(unsigned char *p_bytes, size_t count,
+                       unsigned char seed)
+{
+    size_t index;
+
+    for (index = 0; index < count; index = index + 1)
+    {
+        p_bytes[index] = (unsigned char)(seed + (unsigned char)index);
+    }
+}
+
+static int bytes_match(const unsigned char *p_bytes, size_t count,
+                       unsigned char seed)
+{
+    size_t index;
+
+    for (index = 0; index < count; index = index + 1)
+    {
+        if (p_bytes[index] != (unsigned char)(seed + (unsigned char)index))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int bytes_are_zero(const unsigned char *p_bytes, size_t count)
+{
+    size_t index;
+
+    for (index = 0; index < count; index = index + 1)
+    {
+        if (p_bytes[index] != 0u)
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/*
+ * Resizing a block: growth into the free tail, shrink out of it, a
+ * move when the next block is in the way, the null and zero cases, an
+ * invalid pointer, and the safe variant.
+ *
+ * The sizes come from the arena so the scenarios also run in the
+ * smallest supported build.  A shrink or a move needs more room than
+ * that build has, so those two parts are skipped there and the rest
+ * still proves the contract.
+ */
+static void test_realloc(void)
+{
+    unsigned char *p_block;
+    unsigned char *p_resized;
+    unsigned char *p_first;
+    unsigned char *p_second;
+    size_t         capacity;
+    size_t         alignment;
+    size_t         large;
+    size_t         before;
+
+    capacity = yupiter_heap_capacity();
+    alignment = _Alignof(max_align_t);
+    large = ((capacity / 2u) / alignment) * alignment;
+
+    if (large < (2u * alignment))
+    {
+        large = 2u * alignment;
+    }
+
+    p_block = (unsigned char *)yupiter_malloc(16);
+    check(p_block != NULL, "realloc: the source block is available");
+
+    if (p_block != NULL)
+    {
+        fill_bytes(p_block, 16, 1u);
+        p_resized = (unsigned char *)yupiter_realloc(p_block, large);
+        check(p_resized != NULL, "realloc: a block grows");
+
+        if (p_resized != NULL)
+        {
+            check(p_resized == p_block, "realloc: growth stays in place");
+            check(bytes_match(p_resized, 16, 1u),
+                  "realloc: growth keeps the old contents");
+            check((yupiter_heap_live_bytes() >= large) &&
+                  (yupiter_heap_live_bytes() <= yupiter_heap_capacity()),
+                  "realloc: growth is accounted");
+            p_block = p_resized;
+        }
+
+        p_resized = (unsigned char *)yupiter_realloc(p_block, 0);
+        check(p_resized == NULL, "realloc: a size of zero returns NULL");
+        check(yupiter_heap_live_bytes() == 0,
+              "realloc: a size of zero releases the block");
+    }
+
+    p_block = (unsigned char *)yupiter_realloc(NULL, 16);
+    check(p_block != NULL, "realloc: a null pointer allocates");
+    check(yupiter_heap_live_blocks() == 1,
+          "realloc: the new block is counted");
+    yupiter_free(p_block);
+    check(yupiter_heap_live_bytes() == 0,
+          "realloc: the new block is released");
+
+    if (capacity >= 256u)
+    {
+        p_block = (unsigned char *)yupiter_malloc(64);
+        check(p_block != NULL, "realloc: the shrink block is available");
+
+        if (p_block != NULL)
+        {
+            fill_bytes(p_block, 64, 3u);
+            p_resized = (unsigned char *)yupiter_realloc(p_block, 8);
+            check(p_resized != NULL, "realloc: a block shrinks");
+
+            if (p_resized != NULL)
+            {
+                check(p_resized == p_block, "realloc: shrink stays in place");
+                check(bytes_match(p_resized, 8, 3u),
+                      "realloc: shrink keeps the retained contents");
+                check(yupiter_heap_live_bytes() == alignment,
+                      "realloc: shrink releases the tail");
+                p_block = p_resized;
+            }
+
+            yupiter_free(p_block);
+            check(yupiter_heap_live_bytes() == 0,
+                  "realloc: the shrunk block is released");
+        }
+    }
+
+    if (capacity >= 512u)
+    {
+        p_first = (unsigned char *)yupiter_malloc(16);
+        p_second = (unsigned char *)yupiter_malloc(16);
+        check((p_first != NULL) && (p_second != NULL),
+              "realloc: the move blocks are available");
+
+        if ((p_first != NULL) && (p_second != NULL))
+        {
+            fill_bytes(p_first, 16, 5u);
+            p_resized = (unsigned char *)yupiter_realloc(p_first,
+                                                       capacity / 2u);
+            check(p_resized != NULL, "realloc: an obstructed block moves");
+
+            if (p_resized != NULL)
+            {
+                check(p_resized != p_first,
+                      "realloc: the moved block has a new address");
+                check(bytes_match(p_resized, 16, 5u),
+                      "realloc: the move keeps the old contents");
+                yupiter_free(p_resized);
+            }
+
+            yupiter_free(p_second);
+            check(yupiter_heap_live_bytes() == 0,
+                  "realloc: the move blocks are released");
+        }
+    }
+
+    p_block = (unsigned char *)yupiter_malloc(16);
+    check(p_block != NULL, "realloc: the invalid-pointer block is available");
+
+    if (p_block != NULL)
+    {
+        before = yupiter_heap_live_bytes();
+        check(yupiter_realloc(p_block + 1, 8) == NULL,
+              "realloc: an interior pointer is refused");
+        check(yupiter_heap_live_bytes() == before,
+              "realloc: an invalid pointer leaves the heap unchanged");
+        yupiter_free(p_block);
+        check(yupiter_heap_live_bytes() == 0,
+              "realloc: the invalid-pointer block is released");
+    }
+
+    /*
+     * A failed move is a failure, not a lost block: fill the arena so
+     * the new copy cannot be allocated, then ask for more than the
+     * block can grow into.  The original block must still be live and
+     * unchanged.
+     */
+    p_block = (unsigned char *)yupiter_malloc(16);
+    check(p_block != NULL, "realloc: the exhausted-heap block is available");
+
+    if (p_block != NULL)
+    {
+        void *p_head;
+        void *p_fill;
+
+        fill_bytes(p_block, 16, 9u);
+        p_head = NULL;
+
+        while ((p_fill = yupiter_malloc(16)) != NULL)
+        {
+            *(void **)p_fill = p_head;
+            p_head = p_fill;
+        }
+
+        check(yupiter_realloc(p_block, capacity / 2u) == NULL,
+              "realloc: an exhausted heap reports failure");
+        check(bytes_match(p_block, 16, 9u),
+              "realloc: a failed growth leaves the block unchanged");
+
+        while (p_head != NULL)
+        {
+            p_fill = p_head;
+            p_head = *(void **)p_head;
+            yupiter_free(p_fill);
+        }
+
+        yupiter_free(p_block);
+        check(yupiter_heap_live_bytes() == 0,
+              "realloc: the exhausted-heap blocks are released");
+    }
+
+    p_block = (unsigned char *)yupiter_realloc_safe(NULL, 4, 4);
+    check(p_block != NULL, "realloc_safe: a null pointer allocates");
+
+    if (p_block != NULL)
+    {
+        check(bytes_are_zero(p_block, 16),
+              "realloc_safe: a null pointer allocates zeroed memory");
+        fill_bytes(p_block, 4, 7u);
+        p_resized = (unsigned char *)yupiter_realloc_safe(p_block, 8, 4);
+        check(p_resized != NULL, "realloc_safe: a block grows");
+
+        if (p_resized != NULL)
+        {
+            check(bytes_match(p_resized, 4, 7u),
+                  "realloc_safe: growth keeps the old contents");
+            p_block = p_resized;
+        }
+
+        p_resized = (unsigned char *)yupiter_realloc_safe(p_block, 0, 1);
+        check(p_resized == NULL, "realloc_safe: a zero size returns NULL");
+        check(yupiter_heap_live_bytes() == 0,
+              "realloc_safe: a zero size releases the block");
+    }
 }
 
 int main(void)
@@ -387,10 +634,11 @@ int main(void)
     test_exhaustion_and_release();
     test_printf_releases_its_scratch();
     test_safe_allocation();
+    test_realloc();
 
     if (failures == 0)
     {
-        stdoc_fprintf(stdoc_stderr, "heap: all checks passed\n");
+        yupiter_fprintf(yupiter_stderr, "heap: all checks passed\n");
     }
 
     return failures;
