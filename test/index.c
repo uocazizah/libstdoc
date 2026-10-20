@@ -1,5 +1,5 @@
 /*
- * libstdoc - smoke test
+ * yupiter - smoke test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -36,16 +36,16 @@
  * public header works from both languages.
  */
 
-#include <libstdoc.h>
+#include <yupiter.h>
 
 int main(void)
 {
     const char *name = "Azizah";
     int age = 15;
 
-    stdoc_printf("Hello!\n");
-    stdoc_printf("my name is %s\n", name);
-    stdoc_printf("I'm %d y/o\n", age);
+    yupiter_printf("Hello!\n");
+    yupiter_printf("my name is %s\n", name);
+    yupiter_printf("I'm %d y/o\n", age);
 
     return 0;
 }
