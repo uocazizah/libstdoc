@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -70,12 +70,12 @@ _start:
 
     /*
      * main's return value is already in x0 and becomes the status.
-     * stdoc_sys_exit never returns, so this is a tail branch rather
+     * yupiter_sys_exit never returns, so this is a tail branch rather
      * than a call: the stack stays 16-byte aligned and x30 still points
      * into this file, which is a harmless guard if a kernel ever did
      * return from the exit system call.
      */
-    b       stdoc_sys_exit
+    b       yupiter_sys_exit
     .size   _start, .-_start
 
 /*
