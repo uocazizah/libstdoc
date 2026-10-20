@@ -1,7 +1,7 @@
 the dynamic memory allocator
 ============================
 
-libstdoc allocates from a private static arena of STDOC_HEAP_SIZE
+yupiter allocates from a private static arena of YUPITER_HEAP_SIZE
 bytes (4096 by default).  The heap never asks the operating system
 for memory, which is what lets it exist in a freestanding build, and
 it makes the worst case leak bounded: a program that loses every
@@ -12,58 +12,79 @@ allocator's accounting still reports it.
 The public API
 --------------
 
-    void *stdoc_malloc(size_t size);
-    void  stdoc_free(void *p);
-    void *stdoc_malloc_safe(size_t count, size_t size);
-    void  stdoc_free_safe(void *p);
+    void *yupiter_malloc(size_t size);
+    void  yupiter_free(void *p);
+    void *yupiter_realloc(void *p, size_t size);
+    void *yupiter_malloc_safe(size_t count, size_t size);
+    void  yupiter_free_safe(void *p);
+    void *yupiter_realloc_safe(void *p, size_t count, size_t size);
 
 The authoritative contract is the comment above these declarations in
-"<libstdoc.h>".  In short:
+"<yupiter.h>".  In short:
 
-stdoc_malloc
+yupiter_malloc
     Returns memory aligned for any object, or null.  A size of 0
     allocates nothing and returns null, which is not a failure.
 
-stdoc_free
+yupiter_free
     Forgiving by design: a null pointer, a pointer from outside the
     heap, a pointer into the middle of a block or an already free
     block is ignored without modifying anything.  Use the safe
     variant when such a pointer must be reported instead.
 
-stdoc_malloc_safe
+yupiter_realloc
+    Resizes a live block to "size" bytes and keeps its contents up to
+    the smaller of the old and the new size.  A null pointer allocates,
+    and a size of 0 releases and returns null, as C17 permits.  Growth
+    into the free space after the block and shrinking into a new free
+    tail happen in place; only a block that cannot be resized that way
+    is copied into a fresh allocation and released.  Returns null on
+    failure, leaving the original block live and unchanged.  Added
+    bytes are not initialised.
+
+yupiter_malloc_safe
     Checks that "count * size" does not overflow, and zeroes the
     memory it returns.  A request it cannot satisfy - a wrapping size
-    or an exhausted heap - writes a diagnostic to stdoc_stderr and
+    or an exhausted heap - writes a diagnostic to yupiter_stderr and
     terminates the process with status 134.  The only null result is
     the documented "nothing was requested" case.
 
-stdoc_free_safe
-    Same validation as stdoc_free, but a pointer that is not the start
-    of a live block is reported: diagnostic to stdoc_stderr, then
+yupiter_free_safe
+    Same validation as yupiter_free, but a pointer that is not the start
+    of a live block is reported: diagnostic to yupiter_stderr, then
     termination with status 134.  A null pointer still releases
     nothing and is not an error.
 
-The heap is not thread-safe: libstdoc creates no threads and provides
+yupiter_realloc_safe
+    Same as yupiter_realloc, with the checks of the safe family: the
+    "count * size" product is checked for overflow, and an invalid
+    pointer, an overflowing size or an exhausted heap is fatal instead
+    of returning null.  A null pointer allocates like
+    yupiter_malloc_safe, including its zero fill; growing an existing
+    block leaves the added bytes uninitialised.  A zero count or size
+    releases the block and returns null, which is not an error.
+
+The heap is not thread-safe: yupiter creates no threads and provides
 no synchronisation.
 
 
 Sizing
 ------
 
-STDOC_HEAP_SIZE is defined in include/stdoc_mem.hxx with a default of
+YUPITER_HEAP_SIZE is defined in include/yupiter_mem.hxx with a default of
 4096 and may be overridden without editing a header:
 
-    cmake -S . -B build -DSTDOC_HEAP_SIZE=1024
-    cc -DSTDOC_HEAP_SIZE=8192 ...
+    ./configure --heap-size=1024
+    cc -DYUPITER_HEAP_SIZE=8192 ...
 
 The value must be a plain decimal number of bytes and at least 64; the
 configuration guard rejects anything else when the project is
-configured.  A static assertion in mem/heap.cxx requires the arena to
-be at least four alignment units - 64 bytes on aarch64 and on x86_64 -
-so a build that bypasses CMake cannot produce an allocator with no
-room for a block.  The tests do not depend on the value: they ask
-stdoc_heap_capacity what the arena holds and shape each scenario to
-fit.
+configured.  Static assertions in mem/heap.cxx reject a value that is
+not positive, does not fit in a size_t, or is smaller than one rounded
+block header plus one alignment unit, so a build that bypasses ./configure
+cannot produce an allocator with no room for a block.  The tests do not
+depend on the value: they ask yupiter_heap_capacity what the arena holds
+and shape each scenario to fit.
 
 
 Layout of the arena
@@ -72,7 +93,7 @@ Layout of the arena
 The arena is one contiguous run of blocks.  Every block starts with a
 header, followed by its payload:
 
-    arena (STDOC_HEAP_SIZE bytes, aligned for any object)
+    arena (YUPITER_HEAP_SIZE bytes, aligned for any object)
 
     +-------------------+-------+-------+-------------------+-----
     | payload (size_t)  | state | magic | payload bytes ... |
@@ -83,7 +104,7 @@ header, followed by its payload:
     payload    usable bytes after the header, always a multiple of
                the alignment
     state      free or used
-    magic      0x53444F43 ("SDOC"): marks bytes as a header this
+    magic      0x59555049 ("YUPI"): marks bytes as a header this
                allocator wrote
 
 The header is rounded up to alignof(std::max_align_t) - 16 bytes on
@@ -111,6 +132,38 @@ Allocation
    payload is returned.
 
 A request larger than the arena can hold fails without scanning.
+
+
+Resizing
+--------
+
+yupiter_realloc first locates and validates the block, then takes one of
+three paths:
+
+  1. Shrink: when the requested payload leaves a remainder large
+     enough for another block, the block keeps its address, its payload
+     shrinks and a free tail is written after it.  A remainder smaller
+     than a header plus one alignment unit stays with the block, so a
+     later growth does not have to move it.
+  2. Grow in place: every free block after the block is absorbed until
+     the payload is large enough.  When the result leaves a usable
+     remainder, that remainder is split back into a free tail.
+  3. Move: when the following block is in use and the free space after
+     it is still too small, a new block is allocated, the old contents
+     are copied, and the old block is released.
+
+The shrink and grow paths keep the "no two adjacent free blocks"
+invariant: a free tail is merged with any free block that follows it.
+The move path is the only one that changes the address, and it is also
+the only one that can need memory elsewhere in the arena while the old
+block is still live.  A failed move returns null (or terminates, for
+yupiter_realloc_safe) with the original block untouched.
+
+The bytes a growing resize adds are not initialised.  yupiter_realloc_safe
+can zero a fresh allocation, through its null-pointer case, but the
+allocator does not keep the requested size of a live block, so it cannot
+tell which bytes of an existing block were beyond the caller's last
+request; initialise them explicitly when an extension has to be zero.
 
 
 Release and merging
@@ -159,33 +212,39 @@ whole arena can serve.
 Failure modes of the safe variants
 ----------------------------------
 
-Each of these writes a line to stdoc_stderr and exits with status 134
+Each of these writes a line to yupiter_stderr and exits with status 134
 (the conventional status of an aborted process, 128 + SIGABRT):
 
-    libstdoc: stdoc_malloc_safe: allocation size overflows
-    libstdoc: stdoc_malloc_safe: out of memory
-    libstdoc: stdoc_free_safe: pointer is outside the libstdoc heap
-    libstdoc: stdoc_free_safe: pointer is not the start of a heap block
-    libstdoc: stdoc_free_safe: block is already free (double free)
-    libstdoc: stdoc_free_safe: heap block is corrupted
+    yupiter: yupiter_malloc_safe: allocation size overflows
+    yupiter: yupiter_malloc_safe: out of memory
+    yupiter: yupiter_free_safe: pointer is outside the yupiter heap
+    yupiter: yupiter_free_safe: pointer is not the start of a heap block
+    yupiter: yupiter_free_safe: block is already free (double free)
+    yupiter: yupiter_free_safe: heap block is corrupted
+    yupiter: yupiter_realloc_safe: allocation size overflows
+    yupiter: yupiter_realloc_safe: out of memory
+    yupiter: yupiter_realloc_safe: pointer is outside the yupiter heap
+    yupiter: yupiter_realloc_safe: pointer is not the start of a heap block
+    yupiter: yupiter_realloc_safe: block is already free (double free)
+    yupiter: yupiter_realloc_safe: heap block is corrupted
 
-The diagnostic goes to stdoc_stderr, which is unbuffered, so it
+The diagnostic goes to yupiter_stderr, which is unbuffered, so it
 reaches the operating system before the exit system call.
 
 Because a failure ends the process, these paths are tested one
 scenario per run: test/heap_abort.c selects the scenario on the
-command line and CheckFatal.cmake asserts the status.  See
+command line and test/run-tests.sh asserts the status.  See
 docs/testing.
 
 
 Accounting (internal)
 ---------------------
 
-include/stdoc_mem.hxx declares three queries used by the tests:
+include/yupiter_mem.hxx declares three queries used by the tests:
 
-    size_t stdoc_heap_live_bytes(void);    payload bytes reserved
-    size_t stdoc_heap_live_blocks(void);   blocks they live in
-    size_t stdoc_heap_capacity(void);      size of the arena
+    size_t yupiter_heap_live_bytes(void);    payload bytes reserved
+    size_t yupiter_heap_live_blocks(void);   blocks they live in
+    size_t yupiter_heap_capacity(void);      size of the arena
 
 Both counts are zero once every allocation has been released, which
 is what the tests assert after each scenario.  The header is not part
@@ -211,7 +270,7 @@ Design notes and limits
     needs to grow the heap.
   * Inside mem/heap.cxx the arena - a declared "std::byte" array - is
     only read and written through byte lvalues, and block headers are
-    moved with stdoc_memcpy rather than by casting the storage to a
+    moved with yupiter_memcpy rather than by casting the storage to a
     structure pointer, so strict aliasing is respected for everything
     the library itself does with it.  What a caller does with the
     payload it receives is the caller's own effective type, as with
