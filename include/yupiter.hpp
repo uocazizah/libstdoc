@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,11 +29,11 @@
  * if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBSTDOC_HPP
-#define LIBSTDOC_HPP
+#ifndef YUPITER_HPP
+#define YUPITER_HPP
 
 /*
- * C++ entry point of libstdoc.
+ * C++ entry point of yupiter.
  *
  * The interface is ISO C17 and the implementation behind it is ISO
  * C++23, built freestanding; this header only re-exposes the public
@@ -43,6 +43,6 @@
  * this header as it always did.
  */
 
-#include "libstdoc.h"
+#include "yupiter.h"
 
-#endif /* LIBSTDOC_HPP */
+#endif /* YUPITER_HPP */
