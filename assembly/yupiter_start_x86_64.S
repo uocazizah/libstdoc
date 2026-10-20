@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -75,7 +75,7 @@ _start:
 
     /* main's return value is already in eax and becomes the status.  */
     movl    %eax, %edi
-    call    stdoc_sys_exit
+    call    yupiter_sys_exit
     jmp     .                       /* unreachable; guards bad kernels */
     .size   _start, .-_start
 
