@@ -1,5 +1,5 @@
 /*
- * libstdoc - C++ compatibility smoke test
+ * yupiter - C++ compatibility smoke test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -31,21 +31,21 @@
 
 /*
  * The same program as test/index.c, compiled as C++.  It proves that
- * "<libstdoc.hpp>" is usable from C++ and that the C symbols link
+ * "<yupiter.hpp>" is usable from C++ and that the C symbols link
  * under their unmangled names.  It is built as an ordinary hosted
- * program - see test/CMakeLists.txt for why.
+ * program - see docs/testing for why.
  */
 
-#include <libstdoc.hpp>
+#include <yupiter.hpp>
 
 int main()
 {
     const char *name = "Azizah";
     int age = 15;
 
-    stdoc_printf("Hello!\n");
-    stdoc_printf("my name is %s\n", name);
-    stdoc_printf("I'm %d y/o\n", age);
+    yupiter_printf("Hello!\n");
+    yupiter_printf("my name is %s\n", name);
+    yupiter_printf("I'm %d y/o\n", age);
 
     return 0;
 }
