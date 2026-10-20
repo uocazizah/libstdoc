@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,11 +29,11 @@
  * if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef STDOC_IO_H
-#define STDOC_IO_H
+#ifndef YUPITER_IO_H
+#define YUPITER_IO_H
 
 /*
- * Internal interface shared by the libstdoc I/O and platform layers.
+ * Internal interface shared by the yupiter I/O and platform layers.
  *
  * Nothing declared here is part of the public API, and the header is
  * never installed.  The declarations exist so that the formatting
@@ -51,7 +51,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#include "libstdoc.h"
+#include "yupiter.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,10 +67,10 @@ extern "C" {
  * write system call in the common case without growing the stream
  * object meaningfully.
  */
-#define STDOC_BUFFER_SIZE 256
+#define YUPITER_BUFFER_SIZE 256
 
 /*
- * A libstdoc output stream.
+ * A yupiter output stream.
  *
  * "fd" is an operating-system file descriptor.  "error" is a sticky
  * failure flag: once set, every further write to the stream fails
@@ -79,13 +79,13 @@ extern "C" {
  * to fill, which is how stderr keeps its promised ordering.  "length"
  * is the number of bytes currently staged in "buffer".
  */
-struct stdoc_FILE
+struct yupiter_FILE
 {
     int    fd;
     int    error;
     int    unbuffered;
     size_t length;
-    char   buffer[STDOC_BUFFER_SIZE];
+    char   buffer[YUPITER_BUFFER_SIZE];
 };
 
 /*
@@ -96,26 +96,26 @@ struct stdoc_FILE
  * the only place that knows the system-call numbers and the argument
  * convention of the target, so the formatting engine stays portable.
  *
- * stdoc_sys_write repeats the system call until the kernel has taken
+ * yupiter_sys_write repeats the system call until the kernel has taken
  * every byte, so a short write - which a non-blocking descriptor, or a
  * terminal whose output was stopped and interrupted, produces - is
  * never reported as a success that lost part of the buffer.
  *
- * stdoc_sys_read and stdoc_sys_close belong to the platform layer of
- * the input release that stdoc_stdin is waiting for; nothing in the
+ * yupiter_sys_read and yupiter_sys_close belong to the platform layer of
+ * the input release that yupiter_stdin is waiting for; nothing in the
  * library calls them yet.  They are kept next to the write wrapper so
  * that the whole operating-system surface stays in one file.
  */
-int stdoc_sys_write(int fd, const void *p_buffer, size_t length);
-int stdoc_sys_read(int fd, void *p_buffer, size_t length);
-int stdoc_sys_close(int fd);
+int yupiter_sys_write(int fd, const void *p_buffer, size_t length);
+int yupiter_sys_read(int fd, void *p_buffer, size_t length);
+int yupiter_sys_close(int fd);
 
 /* Terminates the process; never returns.  "status" is the exit code. */
-void stdoc_sys_exit(int status) __attribute__((noreturn));
+void yupiter_sys_exit(int status) __attribute__((noreturn));
 
 /*
- * Generic system-call trampoline (assembly/syscall_aarch64.S and
- * assembly/syscall_x86_64.S, one per architecture).
+ * Generic system-call trampoline (assembly/yupiter_syscall_aarch64.S and
+ * assembly/yupiter_syscall_x86_64.S, one per architecture).
  *
  * Arguments are passed following the ordinary C calling convention of
  * the target; the trampoline rearranges them into the system-call
@@ -123,48 +123,48 @@ void stdoc_sys_exit(int status) __attribute__((noreturn));
  * unmodified, so callers must interpret negative values in the
  * "-4095 .. -1" range as errors.
  *
- * stdoc_syscall3 is the entry point the library uses for the calls
+ * yupiter_syscall3 is the entry point the library uses for the calls
  * that take at most three arguments - read, write, close and exit.  It
- * performs the same translation as stdoc_syscall for those arguments,
+ * performs the same translation as yupiter_syscall for those arguments,
  * without moving the three registers the kernel would ignore.  The
  * six-argument form is retained for a future call that needs them.
  */
-long stdoc_syscall(long number, long arg1, long arg2, long arg3,
+long yupiter_syscall(long number, long arg1, long arg2, long arg3,
                    long arg4, long arg5, long arg6);
 
-long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
+long yupiter_syscall3(long number, long arg1, long arg2, long arg3);
 
 /*
  * Stream helpers (io/file.cxx).
  *
- * stdoc_stream_write writes "length" bytes to the stream.  Small
+ * yupiter_stream_write writes "length" bytes to the stream.  Small
  * writes to a buffered stream are staged and flushed when the buffer
  * fills, when a newline is staged, or (for an unbuffered stream) when
  * the call finishes.  With nothing staged, an unbuffered stream or a
- * payload larger than STDOC_BUFFER_SIZE goes directly to
- * stdoc_sys_write, so it is not copied through the staging buffer.
+ * payload larger than YUPITER_BUFFER_SIZE goes directly to
+ * yupiter_sys_write, so it is not copied through the staging buffer.
  * The function returns 0 on success and -1 on failure, and records the
  * failure in the stream.
  *
- * stdoc_stream_flush pushes the staged bytes to the operating system
+ * yupiter_stream_flush pushes the staged bytes to the operating system
  * and clears the buffer.  It succeeds when nothing is staged.
  *
- * stdoc_stream_discard throws away the staged bytes without writing
+ * yupiter_stream_discard throws away the staged bytes without writing
  * them, which is what a failed call has to do so that half of a
  * conversion never reaches the output.  Bytes already written through
  * the direct path have reached the operating system and are not
  * affected.
  */
-int stdoc_stream_write(stdoc_FILE *stream, const void *p_buffer, size_t length);
-int stdoc_stream_flush(stdoc_FILE *stream);
-void stdoc_stream_discard(stdoc_FILE *stream);
+int yupiter_stream_write(yupiter_FILE *stream, const void *p_buffer, size_t length);
+int yupiter_stream_flush(yupiter_FILE *stream);
+void yupiter_stream_discard(yupiter_FILE *stream);
 
 /*
  * Formatting engine (io/vfprintf.cxx).
  *
  * Returns the number of characters written, or -1 on failure.
  */
-int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args);
+int yupiter_vfprintf(yupiter_FILE *stream, const char *format, va_list args);
 
 /*
  * Internal string helpers.
@@ -172,13 +172,23 @@ int stdoc_vfprintf(stdoc_FILE *stream, const char *format, va_list args);
  * These exist so that the library links with "-nostdlib" without
  * pulling symbols out of a host C library.  They are deliberately
  * prefixed and are not exported as public API.
+ *
+ * yupiter_strlen returns 0 for a null pointer.  The formatting engine
+ * checks a string argument before it calls the helper, so the null
+ * case is not needed there; it is specified anyway so that every
+ * caller sees the same total function instead of a helper whose
+ * behaviour depends on its caller's checks.  yupiter_memcpy and
+ * yupiter_memset return "p_destination" unchanged when either pointer is
+ * null or when the length is zero, rather than failing, which keeps
+ * the zero-length cases of the formatting paths branch-free at the
+ * call site.
  */
-size_t stdoc_strlen(const char *p_string);
-void  *stdoc_memcpy(void *p_destination, const void *p_source, size_t length);
-void  *stdoc_memset(void *p_destination, int value, size_t length);
+size_t yupiter_strlen(const char *p_string);
+void  *yupiter_memcpy(void *p_destination, const void *p_source, size_t length);
+void  *yupiter_memset(void *p_destination, int value, size_t length);
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /* STDOC_IO_H */
+#endif /* YUPITER_IO_H */
