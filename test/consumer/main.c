@@ -1,5 +1,5 @@
 /*
- * libstdoc - a program that consumes the installed package
+ * yupiter - a program that consumes the installed package
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,7 +30,7 @@
  */
 
 /*
- * The program the install test builds against an installed libstdoc.
+ * The program the install test builds against an installed yupiter.
  *
  * It uses the two halves of the library a consumer is most likely to
  * reach for - the formatted output and the allocator - and exits
@@ -49,25 +49,25 @@
  * for a package that was installed badly.
  */
 
-#include <libstdoc.h>
+#include <yupiter.h>
 
 int main(void)
 {
     void *p_block;
     int   written;
 
-    p_block = stdoc_malloc(16u);
+    p_block = yupiter_malloc(16u);
 
     if (p_block == NULL)
     {
         return 1;
     }
 
-    stdoc_free(p_block);
+    yupiter_free(p_block);
 
-    written = stdoc_printf("consumed libstdoc\n");
+    written = yupiter_printf("consumed yupiter\n");
 
-    if (written != 18)
+    if (written != 17)
     {
         return 1;
     }
