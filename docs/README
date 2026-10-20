@@ -1,4 +1,4 @@
-libstdoc documentation
+yupiter documentation
 ======================
 
 Every document in this directory is plain text, in the style of the
@@ -25,7 +25,7 @@ testing
     regenerate a golden file, and the rules a new test has to follow.
 
 formatting
-    The formatting engine behind stdoc_printf: the dialect it
+    The formatting engine behind yupiter_printf: the dialect it
     implements, how one call flows through the code, and where it
     refuses to produce output.
 
@@ -59,5 +59,5 @@ Conventions used in these documents
     library implementation behind that interface is ISO C++23; assembly
     is GNU assembler (GAS) syntax.
   * A document never overrides AGENTS.md or the public comments in
-    "<libstdoc.h>".  When they disagree, the header is the contract:
+    "<yupiter.h>".  When they disagree, the header is the contract:
     fix the document.
