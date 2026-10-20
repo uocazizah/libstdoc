@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -31,12 +31,12 @@
 
 #include <cstdarg>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
-namespace stdoc::io
+namespace yupiter::io
 {
 
-extern "C" int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
+extern "C" YUPITER_PUBLIC int yupiter_fprintf(yupiter_FILE *stream, const char *format, ...)
 {
     va_list args;
     int     count;
@@ -47,7 +47,7 @@ extern "C" int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
     }
 
     va_start(args, format);
-    count = stdoc_vfprintf(stream, format, args);
+    count = yupiter_vfprintf(stream, format, args);
     va_end(args);
 
     /*
@@ -59,11 +59,11 @@ extern "C" int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
      */
     if (count < 0)
     {
-        stdoc_stream_discard(stream);
+        yupiter_stream_discard(stream);
         return -1;
     }
 
-    if (stdoc_stream_flush(stream) != 0)
+    if (yupiter_stream_flush(stream) != 0)
     {
         return -1;
     }
@@ -71,4 +71,4 @@ extern "C" int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
     return count;
 }
 
-} /* namespace stdoc::io */
+} /* namespace yupiter::io */
