@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: yupiter
+Description: Minimal standard C library, freestanding, Linux (aarch64, x86_64)
+Version: @VERSION@
+Libs: -L${libdir} -lyupiter
+Cflags: -I${includedir}
