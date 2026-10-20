@@ -1,13 +1,13 @@
 the formatting engine
 =====================
 
-stdoc_printf and stdoc_fprintf are thin wrappers: they start a
-va_list, call stdoc_vfprintf, and then either discard what the call
+yupiter_printf and yupiter_fprintf are thin wrappers: they start a
+va_list, call yupiter_vfprintf, and then either discard what the call
 had staged (on failure, so that half of a conversion does not reach
 the output) or flush it (on success, because the freestanding startup
 path installs no exit handler and a buffer left dirty would never be
 written).  A write that went through the direct path in
-stdoc_stream_write has already reached the kernel and cannot be
+yupiter_stream_write has already reached the kernel and cannot be
 discarded; that path is only taken for an unbuffered stream or for a
 payload larger than the staging buffer, which could not be held back
 whole in any case.  Everything else happens in io/vfprintf.cxx.
@@ -21,10 +21,10 @@ in an anonymous namespace.
 How one call flows
 ------------------
 
-    stdoc_printf / stdoc_fprintf
+    yupiter_printf / yupiter_fprintf
         |
         v
-    stdoc_vfprintf(stream, format, args)
+    yupiter_vfprintf(stream, format, args)
         |
         +-- borrow the scratch block from the heap (see below)
         |
@@ -34,7 +34,7 @@ How one call flows
         +-- output_write / output_repeat / output_field / output_number
         |         |
         |         v
-        +-- stdoc_stream_write (io/file.cxx)
+        +-- yupiter_stream_write (io/file.cxx)
                   |
                   +-- small buffered write -> staging buffer -> write(2)
                   +-- large or unbuffered write ----------------> write(2)
@@ -103,7 +103,7 @@ surprising choice here.
 Checking the format string
 --------------------------
 
-stdoc_printf and stdoc_fprintf are declared with the GNU
+yupiter_printf and yupiter_fprintf are declared with the GNU
 "format(printf)" attribute when the compiler understands it, so a call
 whose arguments do not match its format string is reported while the
 program is built rather than when it runs.  The attribute is the only
@@ -120,7 +120,7 @@ quiet the one diagnostic around the one call:
 
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wformat"
-    stdoc_printf("%+p\n", pointer);
+    yupiter_printf("%+p\n", pointer);
     #pragma GCC diagnostic pop
 
 test/format.c does exactly that around the cases that pin the sign flags
@@ -155,11 +155,11 @@ library links with -nostdlib.
 Scratch memory
 --------------
 
-Every call borrows one block of 97 bytes from the libstdoc heap: the
+Every call borrows one block of 97 bytes from the yupiter heap: the
 first 65 bytes are the digit storage of output_number, the remaining
 32 bytes are the padding chunk of output_repeat.  The two regions
 never overlap, and the block is released on every path out of
-stdoc_vfprintf, including the two failure paths of the parser, so a
+yupiter_vfprintf, including the two failure paths of the parser, so a
 completed call leaves nothing allocated.
 
 When the heap has no block to spare, the helpers fall back to stack
@@ -179,7 +179,7 @@ docs/testing for how to regenerate it.
 
 test/differential.c covers the same dialect more widely and against a
 live reference: the same source is compiled once against the host C
-library and once against libstdoc, and the two are compared case by
+library and once against yupiter, and the two are compared case by
 case.  Its cases are built at run time from every combination of flags,
 width and precision, so it reaches combinations nobody would write by
 hand - a precision on %c, the '#' flag on %d - which is where two
