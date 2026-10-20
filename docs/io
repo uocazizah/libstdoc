@@ -16,20 +16,20 @@ are invisible to a linker.
 The streams
 -----------
 
-A stream is an opaque object of type stdoc_FILE.  Its layout is an
+A stream is an opaque object of type yupiter_FILE.  Its layout is an
 implementation detail, but internally it is:
 
     int     fd            operating-system file descriptor
     int     error         sticky failure flag
     int     unbuffered    push every write straight to the kernel
     size_t  length        bytes currently staged
-    char    buffer[256]   the staging buffer (STDOC_BUFFER_SIZE)
+    char    buffer[256]   the staging buffer (YUPITER_BUFFER_SIZE)
 
-Three streams exist: stdoc_stdout (fd 1), stdoc_stderr (fd 2) and
-stdoc_stdin (fd 0).  stdoc_stdout is buffered; stdoc_stderr is
+Three streams exist: yupiter_stdout (fd 1), yupiter_stderr (fd 2) and
+yupiter_stdin (fd 0).  yupiter_stdout is buffered; yupiter_stderr is
 unbuffered so that it is never reordered with respect to stdout;
-stdoc_stdin is reserved for a future input release and is not used by
-any function declared in "<libstdoc.h>".
+yupiter_stdin is reserved for a future input release and is not used by
+any function declared in "<yupiter.h>".
 
 The objects are constant pointers: they stay valid for the whole
 program lifetime, but a caller may not rebind stdout to another
@@ -43,7 +43,7 @@ Staging
 
 The staging buffer lives inside the stream object, so staging output
 performs no allocation.  For a payload that does go through the
-buffer, stdoc_stream_write hands the staged bytes to the operating
+buffer, yupiter_stream_write hands the staged bytes to the operating
 system in a single write when any of three events happens:
 
   * the buffer is full,
@@ -53,12 +53,12 @@ system in a single write when any of three events happens:
   * the write is to an unbuffered stream and the caller has finished.
 
 A payload larger than the buffer is not copied through the staging
-buffer first.  When nothing is staged, stdoc_stream_write hands an
+buffer first.  When nothing is staged, yupiter_stream_write hands an
 unbuffered write, or a buffered payload larger than the buffer, to
-stdoc_sys_write in one call.  The wrapper already repeats a short write
+yupiter_sys_write in one call.  The wrapper already repeats a short write
 until the whole payload has been accepted, so the direct path neither
 loses bytes nor needs a stack copy of the payload.  On a buffered
-stream, a payload of exactly STDOC_BUFFER_SIZE bytes still fills the
+stream, a payload of exactly YUPITER_BUFFER_SIZE bytes still fills the
 staging buffer, which keeps the documented "a full buffer stays staged"
 behaviour.
 
@@ -67,8 +67,8 @@ stops at the first newline; it never reads beyond the caller's length.
 The direct path needs no scan at all because it has no staged data to
 order against the bytes being written.
 
-stdoc_stream_flush pushes the staged bytes and clears the buffer; it
-succeeds when nothing is staged.  stdoc_stream_discard throws the
+yupiter_stream_flush pushes the staged bytes and clears the buffer; it
+succeeds when nothing is staged.  yupiter_stream_discard throws the
 staged bytes away without writing them, which is what a failed
 formatted call does so that half of a conversion never reaches the
 output.
@@ -94,8 +94,8 @@ a silent mixture of two targets:
     64         1         write
     94         231       exit_group
 
-The wrappers are stdoc_sys_write, stdoc_sys_read, stdoc_sys_close and
-stdoc_sys_exit.  The first three return 0 on success and -1 on
+The wrappers are yupiter_sys_write, yupiter_sys_read, yupiter_sys_close and
+yupiter_sys_exit.  The first three return 0 on success and -1 on
 failure, mirroring the convention documented for the public functions.
 A raw kernel result is classified by comparing it, as an unsigned
 integer, against -4095: the kernel reports a failure as "-errno" with
@@ -106,7 +106,7 @@ instead would read a completed write of 4096 bytes or more as a
 failure, which is why that boundary has a test of its own; see
 docs/testing.
 
-stdoc_sys_write repeats the system call until the kernel has taken
+yupiter_sys_write repeats the system call until the kernel has taken
 everything it was given.  A blocking write completes the whole transfer
 before it returns, but a short count is a normal result for a terminal
 whose output has been stopped and interrupted, for a non-blocking
@@ -116,29 +116,32 @@ the buffer.  A result of zero for a request that was not zero is a
 failure rather than a retry, since repeating it would never make
 progress.
 
-stdoc_sys_read and stdoc_sys_close belong to the platform layer of the
-input release that stdoc_stdin is waiting for; nothing in the library
+yupiter_sys_read and yupiter_sys_close belong to the platform layer of the
+input release that yupiter_stdin is waiting for; nothing in the library
 calls them yet.  They are kept next to the write wrapper so that the
 whole operating-system surface stays in one file, and they share the
 same classification, so a read of 4096 bytes or more is a success
 there too.
 
-stdoc_sys_exit uses exit_group rather than exit so that every thread
-of the process is terminated.  libstdoc creates no threads, but a
+yupiter_sys_exit uses exit_group rather than exit so that every thread
+of the process is terminated.  yupiter creates no threads, but a
 program linked against it may.  It never returns.
 
 
-The system-call trampolines (assembly/syscall_aarch64.S and
-assembly/syscall_x86_64.S)
--------------------------------------------------------------------
+The system-call trampolines
+---------------------------
 
-The Linux system-call ABI is not the ordinary C calling convention,
-and it is not the same on the two architectures this library
-implements, so each has a trampoline of its own.  Both architectures
-provide two entry points: stdoc_syscall takes six arguments, and
-stdoc_syscall3 takes three.  The platform layer uses the three-argument
-form for read, write, close and exit_group, which is every call it
-wraps; the six-argument form remains for a future call that needs more
+The trampolines live in assembly/yupiter_syscall_aarch64.S,
+assembly/yupiter_syscall3_aarch64.S, assembly/yupiter_syscall_x86_64.S and
+assembly/yupiter_syscall3_x86_64.S.  The Linux system-call ABI is not the
+ordinary C calling convention, and it is not the same on the two
+architectures this library implements, so each has a trampoline of its
+own.  Both architectures provide two entry points, one file each:
+yupiter_syscall takes six arguments, and yupiter_syscall3 takes three.  The
+platform layer uses the three-argument form for read, write, close and
+exit_group, which is every call it wraps; keeping it in a separate
+object means those calls do not pay for argument moves they do not
+need.  The six-argument form remains for a future call that needs more
 registers.
 
 On aarch64 the number is carried in x8 rather than x0, the arguments
@@ -147,13 +150,13 @@ the same registers the C convention uses, so the trampoline only has
 to shift every argument one register to the right, move the number
 into place and execute "svc #0":
 
-    stdoc_syscall:   mov x8, x0       /* number       */
+    yupiter_syscall:   mov x8, x0       /* number       */
                      mov x0, x1       /* arguments    */
                      ...              /* x0 .. x5     */
                      svc #0
                      ret
 
-    stdoc_syscall3:  mov x8, x0       /* number       */
+    yupiter_syscall3:  mov x8, x0       /* number       */
                      mov x0, x1       /* arguments    */
                      mov x1, x2       /* x0 .. x2     */
                      mov x2, x3
@@ -166,7 +169,7 @@ the register the C convention uses for that argument - and the sixth
 argument is passed on the stack.  The trampoline permutes the argument
 registers and then executes "syscall":
 
-    stdoc_syscall:   movq %r8, %r10      /* arg4, not rcx */
+    yupiter_syscall:   movq %r8, %r10      /* arg4, not rcx */
                      movq %r9, %r8       /* arg5          */
                      movq 8(%rsp), %r9   /* arg6          */
                      movq %rdi, %rax     /* number        */
@@ -175,7 +178,7 @@ registers and then executes "syscall":
                      syscall
                      ret
 
-    stdoc_syscall3:  movq %rdi, %rax     /* number        */
+    yupiter_syscall3:  movq %rdi, %rax     /* number        */
                      movq %rsi, %rdi     /* arguments     */
                      movq %rdx, %rsi     /* rdi, rsi, rdx */
                      movq %rcx, %rdx
@@ -193,8 +196,8 @@ Written in GNU assembler (GAS) syntax, as the project conventions
 require.
 
 
-The entry points (assembly/start_aarch64.S and
-assembly/start_x86_64.S)
+The entry points (assembly/yupiter_start_aarch64.S and
+assembly/yupiter_start_x86_64.S)
 -------------------------------------------------
 
 The kernel enters _start with the initial stack layout:
@@ -204,17 +207,17 @@ The kernel enters _start with the initial stack layout:
     sp / rsp + 8    argv[0], ..., argv[argc], NULL
                     envp[0], ..., NULL
 
-start_aarch64.S clears the frame pointer (x29) and the link register
+yupiter_start_aarch64.S clears the frame pointer (x29) and the link register
 (x30) so that a stack unwinder stops cleanly at the bottom of the
 stack, reads the three values, calls main(argc, argv, envp) and passes
-main's return value to stdoc_sys_exit, which becomes the exit status.
+main's return value to yupiter_sys_exit, which becomes the exit status.
 The branch to the exit wrapper is a tail branch rather than a call,
 since the wrapper never returns: the stack stays 16-byte aligned and no
-return address is needed.  start_x86_64.S does the same with the frame
+return address is needed.  yupiter_start_x86_64.S does the same with the frame
 pointer (rbp), and aligns the stack to 16 bytes before the call, as the
 System V AMD64 ABI requires.  It keeps the call rather than tail
 branching because, after main returns, %rsp is 16-byte aligned; the
-call makes stdoc_sys_exit enter with the 8-mod-16 alignment the System
+call makes yupiter_sys_exit enter with the 8-mod-16 alignment the System
 V ABI promises a called function.
 
 There is deliberately no more here than the ABI requires: no
@@ -227,24 +230,24 @@ themselves instead of registering an exit-time flush.
 The string helpers (io/string.cxx)
 ----------------------------------
 
-stdoc_strlen, stdoc_memcpy and stdoc_memset live here because the
+yupiter_strlen, yupiter_memcpy and yupiter_memset live here because the
 library is linked with -nostdlib: it may not call those names from a
 host C library, since they would either be missing at link time or
 silently resolve to a different implementation than the one under
-test.  They are prefixed so they never collide when libstdoc is linked
+test.  They are prefixed so they never collide when yupiter is linked
 into a hosted program, and none of them is part of the public API.
 
-stdoc_memcpy and stdoc_memset move sixteen bytes at a time through a
+yupiter_memcpy and yupiter_memset move sixteen bytes at a time through a
 local byte block.  The block is what lets the compiler emit wide loads
 and stores while the function keeps reading and writing only inside the
 caller's length; casting the pointers to a wider type would raise the
 alignment and aliasing questions the C++ object model does not let a
 byte copy answer.  A shorter tail is copied one byte at a time.
 
-stdoc_strlen walks the string one byte at a time and stops at the
+yupiter_strlen walks the string one byte at a time and stops at the
 terminating null.  A word-at-a-time strlen could read past the null and
 outside the object, so it is deliberately not used even though it would
 scan faster.
 
-The heap allocator in mem/heap.cxx uses stdoc_memcpy to move block
+The heap allocator in mem/heap.cxx uses yupiter_memcpy to move block
 headers in and out of the arena; see docs/heap for why.
