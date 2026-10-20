@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,7 +30,7 @@
  */
 
 /*
- * System-call trampolines for Linux on x86_64.
+ * The six-argument system-call trampoline for Linux on x86_64.
  *
  * Written in GNU assembler (GAS) syntax, as required by the project
  * conventions.  The Linux system-call ABI for x86_64 differs from the
@@ -42,14 +42,14 @@
  * trampoline therefore has to permute the argument registers as well
  * as move the number into place.
  *
- * The three-argument entry point is the one the library uses for read,
- * write, close and exit: it avoids the fourth, fifth and sixth argument
- * moves, including the load from the stack, on every system call.  The
- * six-argument entry point remains for a future call that needs more
- * registers.
+ * The six-argument entry point remains for a future call that needs
+ * more registers.  The three-argument entry point that read, write,
+ * close and exit use is in syscall3_x86_64.S: it avoids the fourth,
+ * fifth and sixth argument moves, including the load from the stack,
+ * on every system call.
  *
  * The C convention allows a function to destroy rax, rcx, rdx, rsi,
- * rdi, r8, r9, r10 and r11; these functions touch nothing else, so no
+ * rdi, r8, r9, r10 and r11; this function touches nothing else, so no
  * explicit save or restore is needed.
  */
 
@@ -57,16 +57,17 @@
     .align 4
 
 /*
- * long stdoc_syscall(long number, long arg1, long arg2, long arg3,
+ * long yupiter_syscall(long number, long arg1, long arg2, long arg3,
  *                    long arg4, long arg5, long arg6);
  *
  * On entry:  rdi = number, rsi, rdx, rcx, r8 and r9 = the arguments
  *            one to five, the sixth at 8(%rsp).
  * On exit:   rax = raw kernel result.
  */
-    .global stdoc_syscall
-    .type   stdoc_syscall, @function
-stdoc_syscall:
+    .global yupiter_syscall
+    .hidden yupiter_syscall
+    .type   yupiter_syscall, @function
+yupiter_syscall:
     movq    %r8, %r10               /* arg4 goes in r10, not rcx      */
     movq    %r9, %r8                /* arg5 goes in r8                */
     movq    8(%rsp), %r9            /* arg6 comes from the stack      */
@@ -77,25 +78,7 @@ stdoc_syscall:
     movq    %rcx, %rdx
     syscall                         /* invoke the kernel              */
     ret                             /* result is already in rax       */
-    .size   stdoc_syscall, .-stdoc_syscall
-
-/*
- * long stdoc_syscall3(long number, long arg1, long arg2, long arg3);
- *
- * On entry:  rdi = number, rsi, rdx and rcx = the arguments.
- * On exit:   rax = raw kernel result.
- */
-    .align 4
-    .global stdoc_syscall3
-    .type   stdoc_syscall3, @function
-stdoc_syscall3:
-    movq    %rdi, %rax              /* system-call number goes in rax */
-    movq    %rsi, %rdi              /* shift the arguments into rdi,  */
-    movq    %rdx, %rsi              /* rsi and rdx                    */
-    movq    %rcx, %rdx
-    syscall                         /* invoke the kernel              */
-    ret                             /* result is already in rax       */
-    .size   stdoc_syscall3, .-stdoc_syscall3
+    .size   yupiter_syscall, .-yupiter_syscall
 
 /*
  * Mark the stack as non-executable when the section is present.
