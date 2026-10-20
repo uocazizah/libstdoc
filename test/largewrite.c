@@ -1,5 +1,5 @@
 /*
- * libstdoc - short write retry test
+ * yupiter - short write retry test
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -45,7 +45,7 @@
  * that lost part of a multi-piece transfer fails the second run's
  * bytes.
  *
- * The retry loop in stdoc_sys_write is not what the pipe run exercises:
+ * The retry loop in yupiter_sys_write is not what the pipe run exercises:
  * a blocking write completes the whole transfer before it returns, so
  * the kernel does not hand back a short count here.  A short count is
  * defensive - it is what a terminal produces when a signal arrives
@@ -59,7 +59,7 @@
 
 #include <stddef.h>
 
-#include "stdoc_io.hxx"
+#include "yupiter_io.hxx"
 
 #define PAYLOAD_SIZE 200000
 
@@ -84,7 +84,7 @@ int main(void)
      * with this test in particular; it is a property of linking
      * without a C runtime.  See docs/building.
      */
-    stdoc_fprintf(stdoc_stderr,
+    yupiter_fprintf(yupiter_stderr,
                   "large write test: writing %d bytes to stdout\n",
                   PAYLOAD_SIZE);
 
@@ -93,7 +93,7 @@ int main(void)
         payload[index] = (unsigned char)('0' + (index % 10u));
     }
 
-    if (stdoc_sys_write(1, payload, PAYLOAD_SIZE) != 0)
+    if (yupiter_sys_write(1, payload, PAYLOAD_SIZE) != 0)
     {
         return 1;
     }
