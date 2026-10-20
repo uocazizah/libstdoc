@@ -1,5 +1,5 @@
 /*
- * libstdoc - a minimal standard C library
+ * yupiter - a minimal standard C library
  * Copyright (C) 2026 Uoc Azizah
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,11 +29,11 @@
  * if not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBSTDOC_H
-#define LIBSTDOC_H
+#ifndef YUPITER_H
+#define YUPITER_H
 
 /*
- * Public interface of libstdoc.
+ * Public interface of yupiter.
  *
  * The header is written in ISO C17 and is deliberately usable in
  * freestanding builds: it depends only on "<stdarg.h>" and
@@ -45,10 +45,38 @@
 #include <stddef.h>
 
 /*
+ * Version of the library.
+ *
+ * The same values are assembled into the package version of the
+ * pkg-config file and the shared-object version of the build; they are
+ * part of the interface so that a consumer can check at compile time
+ * which release it was built against.
+ */
+#define YUPITER_VERSION_MAJOR 1
+#define YUPITER_VERSION_MINOR 0
+#define YUPITER_VERSION_PATCH 0
+#define YUPITER_VERSION_STRING "1.0.0"
+
+/*
+ * Symbol visibility.
+ *
+ * The library is built with "-fvisibility=hidden", so every symbol is
+ * local to the shared object unless this header marks it as exported.
+ * The attribute is a no-op for a static archive and for a consumer that
+ * includes the header, and it expands to nothing on a compiler that
+ * does not understand it, so the header still compiles as ISO C17.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define YUPITER_PUBLIC __attribute__((visibility("default")))
+#else
+#define YUPITER_PUBLIC
+#endif
+
+/*
  * Compile-time format checking.
  *
- * When the compiler understands the GNU attribute, stdoc_printf and
- * stdoc_fprintf are checked against the arguments they are given, so a
+ * When the compiler understands the GNU attribute, yupiter_printf and
+ * yupiter_fprintf are checked against the arguments they are given, so a
  * mismatch is reported while the program is built instead of when it
  * runs.  The attribute is the only compiler extension in this header:
  * it changes no declaration and no calling convention, it is provided
@@ -63,10 +91,10 @@
  * uses it.
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define STDOC_PRINTF_FORMAT(_format_position, _first_argument) \
+#define YUPITER_PRINTF_FORMAT(_format_position, _first_argument) \
     __attribute__((format(printf, _format_position, _first_argument)))
 #else
-#define STDOC_PRINTF_FORMAT(_format_position, _first_argument)
+#define YUPITER_PRINTF_FORMAT(_format_position, _first_argument)
 #endif
 
 #ifdef __cplusplus
@@ -77,32 +105,32 @@ extern "C" {
  * Opaque output stream.
  *
  * The layout is an implementation detail and must not be relied upon.
- * A stream is obtained from libstdoc (stdoc_stdout, stdoc_stderr and
- * stdoc_stdin are the only streams provided in this release) and is
+ * A stream is obtained from yupiter (yupiter_stdout, yupiter_stderr and
+ * yupiter_stdin are the only streams provided in this release) and is
  * passed to the functions below.  Passing a null stream pointer, or a
- * pointer to an object that is not a libstdoc stream, is undefined
+ * pointer to an object that is not a yupiter stream, is undefined
  * behaviour.
  */
-typedef struct stdoc_FILE stdoc_FILE;
+typedef struct yupiter_FILE yupiter_FILE;
 
 /*
  * Standard streams.
  *
- * stdoc_stdout is buffered; the buffer is flushed when a newline is
- * written and at the end of every completed call.  stdoc_stderr is
- * unbuffered.  stdoc_stdin is reserved for a future input release and
+ * yupiter_stdout is buffered; the buffer is flushed when a newline is
+ * written and at the end of every completed call.  yupiter_stderr is
+ * unbuffered.  yupiter_stdin is reserved for a future input release and
  * is not used by the functions declared here.
  *
  * The objects are constant pointers: the stream they point to stays
  * valid for the whole program lifetime, but the stream itself is not
  * modified through the pointer.
  */
-extern stdoc_FILE *const stdoc_stdout;
-extern stdoc_FILE *const stdoc_stderr;
-extern stdoc_FILE *const stdoc_stdin;
+extern YUPITER_PUBLIC yupiter_FILE *const yupiter_stdout;
+extern YUPITER_PUBLIC yupiter_FILE *const yupiter_stderr;
+extern YUPITER_PUBLIC yupiter_FILE *const yupiter_stdin;
 
 /*
- * Write the formatted string described by "format" to stdoc_stdout.
+ * Write the formatted string described by "format" to yupiter_stdout.
  *
  * "format" must not be null.  The conversions supported in this
  * release are:
@@ -141,34 +169,35 @@ extern stdoc_FILE *const stdoc_stdin;
  * could not be written.  On failure the stream keeps a sticky error
  * and later calls fail immediately.
  *
- * Each call borrows one small scratch block from the libstdoc heap
+ * Each call borrows one small scratch block from the yupiter heap
  * for the duration of the call and releases it before returning, so
  * a completed call leaves nothing allocated.  When the heap is
  * exhausted the call falls back to an internal stack buffer instead,
  * so running out of heap never makes the formatted functions fail.
  */
-int stdoc_printf(const char *format, ...) STDOC_PRINTF_FORMAT(1, 2);
+YUPITER_PUBLIC int yupiter_printf(const char *format, ...) YUPITER_PRINTF_FORMAT(1, 2);
 
 /*
- * Same as stdoc_printf, but writes to "stream" instead of
- * stdoc_stdout.  See stdoc_printf for the supported conversions and
+ * Same as yupiter_printf, but writes to "stream" instead of
+ * yupiter_stdout.  See yupiter_printf for the supported conversions and
  * for the meaning of the return value.
  */
-int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
-    STDOC_PRINTF_FORMAT(2, 3);
+YUPITER_PUBLIC int yupiter_fprintf(yupiter_FILE *stream, const char *format, ...)
+    YUPITER_PRINTF_FORMAT(2, 3);
 
 /*
  * Dynamic memory.
  *
- * libstdoc allocates from a private static arena whose size is fixed
+ * yupiter allocates from a private static arena whose size is fixed
  * when the library is compiled; the heap never grows through the
  * operating system.  A build may set the arena size with
- * "-DSTDOC_HEAP_SIZE=<bytes>" (4096 by default), which also bounds
- * the worst case leak: memory that is never released stays inside
- * that arena and is reported by the library's own accounting rather
- * than accumulating unnoticed.
+ * "./configure --heap-size=<bytes>" or, when the library is compiled
+ * by other means, with "-DYUPITER_HEAP_SIZE=<bytes>".  The default is
+ * 4096 bytes, which also bounds the worst case leak: memory that is
+ * never released stays inside that arena and is reported by the
+ * library's own accounting rather than accumulating unnoticed.
  *
- * The heap is not thread-safe: libstdoc creates no threads and
+ * The heap is not thread-safe: yupiter creates no threads and
  * provides no synchronisation.
  */
 
@@ -180,21 +209,22 @@ int stdoc_fprintf(stdoc_FILE *stream, const char *format, ...)
  * A "size" of 0 allocates nothing and returns a null pointer, which
  * is not a failure.  Returns null on failure.
  */
-void *stdoc_malloc(size_t size);
+YUPITER_PUBLIC void *yupiter_malloc(size_t size);
 
 /*
- * Release a block obtained from stdoc_malloc or stdoc_malloc_safe.
+ * Release a block obtained from yupiter_malloc, yupiter_malloc_safe,
+ * yupiter_realloc or yupiter_realloc_safe.
  *
  * A null pointer releases nothing.  Anything else that is not the
  * start of a live block - a pointer from outside the heap, a pointer
  * into the middle of a block, a block that is already free - is
- * ignored without modifying the heap.  Use stdoc_free_safe when such
+ * ignored without modifying the heap.  Use yupiter_free_safe when such
  * a pointer must be reported instead.
  */
-void stdoc_free(void *p);
+YUPITER_PUBLIC void yupiter_free(void *p);
 
 /*
- * Same as stdoc_malloc, but with the checks a caller should not have
+ * Same as yupiter_malloc, but with the checks a caller should not have
  * to repeat:
  *
  *   - "count * size" is computed with an overflow check, so a request
@@ -202,33 +232,73 @@ void stdoc_free(void *p);
  *   - the memory is filled with zero bytes before it is returned.
  *
  * A failure to satisfy the request - an overflowing size or an
- * exhausted heap - writes a diagnostic to stdoc_stderr and terminates
+ * exhausted heap - writes a diagnostic to yupiter_stderr and terminates
  * the process with status 134, so this function never returns a null
  * pointer for a request it could not meet.  The only null result is
  * the documented "nothing was requested" case ("count" or "size" is
  * 0), which allocates nothing and is not an error.
  */
-void *stdoc_malloc_safe(size_t count, size_t size);
+YUPITER_PUBLIC void *yupiter_malloc_safe(size_t count, size_t size);
 
 /*
- * Same as stdoc_free, but a pointer that is not the start of a live
+ * Same as yupiter_free, but a pointer that is not the start of a live
  * block is reported: the function writes a diagnostic naming the
  * problem (outside the heap, not a block start, double free or a
- * corrupted header) to stdoc_stderr and terminates the process with
+ * corrupted header) to yupiter_stderr and terminates the process with
  * status 134 instead of ignoring it.  A null pointer still releases
  * nothing and is not an error.
  */
-void stdoc_free_safe(void *p);
+YUPITER_PUBLIC void yupiter_free_safe(void *p);
+
+/*
+ * Resize the block that "p" points at so that it holds "size" bytes.
+ *
+ * "p" must be null or the start of a live block obtained from
+ * yupiter_malloc, yupiter_malloc_safe, yupiter_realloc or
+ * yupiter_realloc_safe.  A null pointer behaves like
+ * yupiter_malloc(size); otherwise the block keeps its contents up to
+ * the smaller of the old and new sizes.
+ *
+ * A block grows in place when the free space after it is large
+ * enough, and shrinks in place when the remainder can become a free
+ * block; only otherwise is it copied into a fresh block and the old
+ * one released.  Bytes added by a growing resize are not initialised.
+ *
+ * Returns the resized block, or null when the request cannot be met.
+ * A null result leaves the original block unchanged and still live.
+ * A "size" of 0 releases the block and returns null, as C17 permits;
+ * because null is also the failure result, the caller has to look at
+ * "size" to tell the two cases apart.
+ */
+YUPITER_PUBLIC void *yupiter_realloc(void *p, size_t size);
+
+/*
+ * Same as yupiter_realloc, but with the checks a caller should not have
+ * to repeat:
+ *
+ *   - "count * size" is computed with an overflow check, so a size
+ *     that wraps around is rejected instead of being truncated;
+ *   - an invalid pointer, an overflowing size and an exhausted heap
+ *     all write a diagnostic to yupiter_stderr and terminate the
+ *     process with status 134 instead of returning null.
+ *
+ * A null "p" allocates like yupiter_malloc_safe, including its zero
+ * fill.  Growing an existing block does not initialise the bytes it
+ * adds; initialise them before use.  A "count" or "size" of 0 releases
+ * "p" (a null pointer releases nothing) and returns null, which is not
+ * an error.
+ */
+YUPITER_PUBLIC void *yupiter_realloc_safe(void *p, size_t count, size_t size);
 
 /*
  * The format-checking macro is an internal detail of the two
  * declarations above; it is undefined here so that the public
  * namespace keeps only the documented names.
  */
-#undef STDOC_PRINTF_FORMAT
+#undef YUPITER_PRINTF_FORMAT
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /* LIBSTDOC_H */
+#endif /* YUPITER_H */
