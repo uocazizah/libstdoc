@@ -18,7 +18,7 @@ than silently mapped onto an implementation that does not match it.
 Project Status
 -----------------
 
-yupiter is stable.  The current release is 1.0.0 (see NEWS); the
+yupiter is stable.  The current release is 1.0.1 (see NEWS); the
 shared object has SOVERSION 1.
 
 Within the 1.x series the exported symbols, their signatures, their C
