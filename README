@@ -65,6 +65,7 @@ docs/         Documentation
 test/         Tests in C, plus a C++ compatibility test
 mk/           Makefile modules
 build/        Generated build tree (not in the repository)
+python/       Python binding (PyO3/maturin), not part of the library build
 
 Documentation
 ----------------------
