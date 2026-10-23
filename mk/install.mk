@@ -8,11 +8,45 @@
 # The prefix is fixed when ./configure runs; it is not a make variable
 # that can be overridden at install time, because the package metadata
 # is generated from it.
+#
+# When the shared object is installed into the running system, the
+# dynamic linker cache is refreshed so that a program linked against
+# libyupiter.so.1 finds it without LD_LIBRARY_PATH.  A staged
+# installation (DESTDIR non-empty) leaves the cache alone: the package
+# manager of the target system owns that step.
+
+LDCONFIG ?= ldconfig
 
 .PHONY: install uninstall install-headers install-libraries \
         install-metadata
 
 install: all install-headers install-libraries install-metadata
+ifeq ($(BUILD_SHARED),yes)
+ifneq ($(DESTDIR),)
+	@echo "install: DESTDIR is set; the dynamic linker cache is not updated"
+else
+	@if [ -z "$(LDCONFIG)" ]; then \
+	    echo "install: LDCONFIG is empty; the dynamic linker cache is not updated"; \
+	elif command -v "$(LDCONFIG)" >/dev/null 2>&1; then \
+	    if "$(LDCONFIG)"; then \
+	        if "$(LDCONFIG)" -p | grep -F "libyupiter.so.$(SOVERSION)" >/dev/null 2>&1; then \
+	            echo "install: updated the dynamic linker cache"; \
+	        else \
+	            echo "install: warning: $(LIBDIR) is not in the dynamic linker" >&2; \
+	            echo "  search path; add it to /etc/ld.so.conf.d/ and run" >&2; \
+	            echo "  \"$(LDCONFIG)\", or set LD_LIBRARY_PATH" >&2; \
+	        fi; \
+	    else \
+	        echo "install: warning: could not update the dynamic linker" >&2; \
+	        echo "  cache; run \"$(LDCONFIG)\" as root if the library is" >&2; \
+	        echo "  not found at run time" >&2; \
+	    fi; \
+	else \
+	    echo "install: warning: $(LDCONFIG) was not found; the dynamic" >&2; \
+	    echo "  linker cache was not updated" >&2; \
+	fi
+endif
+endif
 
 install-headers:
 	$(INSTALL) -d $(DESTDIR)$(INCLUDEDIR)
@@ -52,3 +86,12 @@ uninstall:
 	rm -f $(DESTDIR)$(CMAKEDIR)/yupiter-config.cmake
 	rm -f $(DESTDIR)$(CMAKEDIR)/yupiter-config-version.cmake
 	-rmdir $(DESTDIR)$(CMAKEDIR) $(DESTDIR)$(PKGCONFIGDIR) 2>/dev/null || true
+ifeq ($(DESTDIR),)
+ifeq ($(BUILD_SHARED),yes)
+	@if [ -n "$(LDCONFIG)" ] && command -v "$(LDCONFIG)" >/dev/null 2>&1; then \
+	    if ! "$(LDCONFIG)" >/dev/null 2>&1; then \
+	        echo "uninstall: warning: could not update the dynamic linker cache" >&2; \
+	    fi; \
+	fi
+endif
+endif
