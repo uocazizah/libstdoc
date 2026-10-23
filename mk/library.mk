@@ -7,7 +7,7 @@
 #
 # The shared object carries the usual three names:
 #
-#     libyupiter.so.1.0.1   the real file
+#     libyupiter.so.1.0.2   the real file
 #     libyupiter.so.1       the soname the dynamic linker records
 #     libyupiter.so         the link-time name
 
