@@ -9,6 +9,22 @@ Released 23 October 2026.
 This patch keeps the C17 interface, the C++23 implementation and the
 ABI unchanged.
 
+Python bindings
+~~~~~~~~~~~~~~~
+  * A new PyO3-based Python binding (`python/`) exposes the public C17
+    interface through the Python module `yupiter`. The binding uses
+    `maturin` and produces `abi3` wheels (`abi3-py312`). It links
+    against `libyupiter.so` and exports every public symbol declared
+    in `include/yupiter.h`: the formatted-output functions
+    (`yupiter_printf`, `yupiter_fprintf`), the allocator
+    (`yupiter_malloc`, `yupiter_free`, `yupiter_realloc`), the safe
+    allocator variants (`yupiter_malloc_safe`, `yupiter_free_safe`,
+    `yupiter_realloc_safe`), and the stream constants
+    (`yupiter_stdout`/`STDOUT`, `yupiter_stderr`/`STDERR`,
+    `yupiter_stdin`/`STDIN`). The `*_safe` variants check for
+    overflow and raise Python exceptions instead of terminating with
+    status 134, so they remain safe to call from Python code.
+
 Build
 ~~~~~
   * "make install" refreshes the dynamic linker cache with ldconfig
