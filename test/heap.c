@@ -643,6 +643,19 @@ static void test_checked_operations(void)
     check(yupiter_realloc_checked(NULL, 16, NULL) ==
               YUPITER_MEMORY_INVALID_POINTER,
           "checked resize rejects missing result storage");
+    result = &foreign;
+    check(yupiter_realloc_checked(NULL, SIZE_MAX, &result) ==
+              YUPITER_MEMORY_OVERFLOW,
+          "checked allocation classifies alignment overflow");
+    check(result == NULL, "overflowing checked allocation clears result");
+    result = &foreign;
+    check(yupiter_realloc_checked(NULL, yupiter_heap_capacity(), &result) ==
+              YUPITER_MEMORY_OUT_OF_MEMORY,
+          "checked allocation classifies exhaustion");
+    check(result == NULL, "exhausted checked allocation clears result");
+    check(yupiter_realloc_checked(NULL, 0, &result) == YUPITER_MEMORY_OK,
+          "checked zero-size allocation succeeds");
+    check(result == NULL, "checked zero-size allocation returns null");
     check(yupiter_realloc_checked(NULL, 16, &result) == YUPITER_MEMORY_OK,
           "checked resize allocates from null");
     p = (unsigned char *)result;
@@ -674,6 +687,7 @@ static void test_checked_operations(void)
           "checked operations leak nothing");
 }
 
+/* Run allocator scenarios and return the number of failed checks. */
 int main(void)
 {
     failures = 0;

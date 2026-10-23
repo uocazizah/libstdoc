@@ -11,6 +11,7 @@ import yupiter
 
 
 def _run_python(code):
+    """Run binding calls in a child with captured output and a ten-second limit."""
     return subprocess.run(
         [sys.executable, "-c", "import yupiter; " + code],
         capture_output=True,
@@ -20,6 +21,7 @@ def _run_python(code):
 
 
 def _expect_error(error_type, callable_):
+    """Return the expected exception message, failing if the call succeeds."""
     try:
         callable_()
     except error_type as exc:
@@ -218,11 +220,19 @@ def test_malloc_safe_zero_filled():
 
 
 def test_malloc_safe_overflow():
+    """Multiplication overflow raises the standard Python OverflowError."""
     message = _expect_error(OverflowError, lambda: yupiter.yupiter_malloc_safe(1 << 63, 2))
     assert "overflow" in message
 
 
+def test_malloc_safe_alignment_overflow():
+    """Alignment overflow raises OverflowError even when the product fits size_t."""
+    size_max = ctypes.c_size_t(-1).value
+    _expect_error(OverflowError, lambda: yupiter.yupiter_malloc_safe(1, size_max))
+
+
 def test_malloc_safe_oom():
+    """Exhaustion raises MemoryError and leaves the allocator usable."""
     _expect_error(MemoryError, lambda: yupiter.yupiter_malloc_safe(1, 100000))
     test_malloc_safe()
 
@@ -238,6 +248,7 @@ def test_free_safe_valid():
 
 
 def test_free_safe_invalid():
+    """A foreign pointer raises ValueError without damaging later allocations."""
     _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(12345))
     test_malloc_safe()
 
@@ -258,6 +269,7 @@ def test_realloc_safe_zero():
 
 
 def test_realloc_safe_overflow():
+    """A null-pointer resize detects overflow in count * size."""
     message = _expect_error(
         OverflowError,
         lambda: yupiter.yupiter_realloc_safe(0, 1 << 63, 2)
@@ -265,13 +277,28 @@ def test_realloc_safe_overflow():
     assert "overflow" in message
 
 
+def test_realloc_safe_alignment_overflow():
+    """Null and live resizes classify alignment overflow without losing data."""
+    size_max = ctypes.c_size_t(-1).value
+    _expect_error(OverflowError, lambda: yupiter.yupiter_realloc_safe(0, 1, size_max))
+    ptr = yupiter.yupiter_malloc_safe(1, 8)
+    ctypes.memmove(ptr, b"SURVIVED", 8)
+    try:
+        _expect_error(OverflowError, lambda: yupiter.yupiter_realloc_safe(ptr, 1, size_max))
+        assert ctypes.string_at(ptr, 8) == b"SURVIVED"
+    finally:
+        yupiter.yupiter_free_safe(ptr)
+
+
 def test_realloc_safe_invalid():
+    """Foreign pointers raise ValueError even when the requested size is zero."""
     _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(12345, 1, 4))
     _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(12345, 0, 4))
     test_malloc_safe()
 
 
 def test_realloc_safe_oom():
+    """A failed resize raises MemoryError and preserves the original bytes."""
     ptr = yupiter.yupiter_malloc_safe(1, 8)
     ctypes.memmove(ptr, b"SURVIVED", 8)
     try:
@@ -282,6 +309,7 @@ def test_realloc_safe_oom():
 
 
 def test_safe_invalid_pointers():
+    """Checked operations reject interior and freed pointers without corruption."""
     ptr = yupiter.yupiter_malloc(16)
     assert ptr is not None
     _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(ptr + 1))
@@ -293,6 +321,7 @@ def test_safe_invalid_pointers():
 
 
 def test_realloc_safe_zero_product():
+    """Either zero factor releases live blocks and returns 0 for null pointers."""
     for count, size in [(0, 4), (2, 0)]:
         assert yupiter.yupiter_realloc_safe(0, count, size) == 0
         ptr = yupiter.yupiter_malloc(8)
@@ -302,6 +331,7 @@ def test_realloc_safe_zero_product():
 
 
 def test_output_is_literal():
+    """Percent directives and UTF-8 text print literally with byte-based counts."""
     # Run in a child so a regression cannot crash or flood the test runner.
     text = "100% literal: %s %p %08x %n %% %*s %999999999d café\n"
     for stream, output in [(None, "stdout"), ("STDOUT", "stdout"), ("STDERR", "stderr")]:
@@ -316,6 +346,7 @@ def test_output_is_literal():
 
 
 def test_output_embedded_null():
+    """Output wrappers reject embedded nulls by returning None."""
     assert yupiter.yupiter_printf("before\0after") is None
     assert yupiter.yupiter_fprintf(yupiter.STDOUT, "before\0after") is None
 
@@ -365,6 +396,7 @@ if __name__ == "__main__":
     test_malloc_safe_zero()
     test_malloc_safe_zero_filled()
     test_malloc_safe_overflow()
+    test_malloc_safe_alignment_overflow()
     test_malloc_safe_oom()
     test_free_safe_null()
     test_free_safe_valid()
@@ -372,6 +404,7 @@ if __name__ == "__main__":
     test_realloc_safe()
     test_realloc_safe_zero()
     test_realloc_safe_overflow()
+    test_realloc_safe_alignment_overflow()
     test_realloc_safe_invalid()
     test_realloc_safe_oom()
     test_realloc_safe_preserves_contents()

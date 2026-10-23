@@ -661,7 +661,8 @@ resize_status yupiter_heap_resize_status(release_result result) noexcept
  * resized block has been validated.
  *
  * "*pp_result" is the new pointer on success and null on every
- * failure.
+ * failure.  Alignment overflow is reported for both null and live
+ * pointers.
  */
 resize_status yupiter_heap_resize(void *p, std::size_t size, void **pp_result)
 {
@@ -685,6 +686,11 @@ resize_status yupiter_heap_resize(void *p, std::size_t size, void **pp_result)
         if (size == 0)
         {
             return resize_status::accept;
+        }
+
+        if (yupiter_heap_align_size(size, &requested) != 0)
+        {
+            return resize_status::overflow;
         }
 
         p_result = yupiter_malloc(size);
@@ -1145,6 +1151,10 @@ extern "C" YUPITER_PUBLIC void *yupiter_realloc_safe(void *p, std::size_t count,
     return p_result;
 }
 
+/*
+ * Release a live block without invoking the fatal handler.  Null succeeds;
+ * foreign, interior, freed or corrupt pointers return INVALID_POINTER.
+ */
 extern "C" YUPITER_PUBLIC yupiter_memory_status yupiter_free_checked(void *p)
 {
     if (p == nullptr)
@@ -1157,6 +1167,12 @@ extern "C" YUPITER_PUBLIC yupiter_memory_status yupiter_free_checked(void *p)
                ? YUPITER_MEMORY_OK : YUPITER_MEMORY_INVALID_POINTER;
 }
 
+/*
+ * Resize with explicit status, clearing *result on failure and preserving
+ * the original block.  Null allocates, zero size releases, and alignment
+ * overflow is distinct from exhaustion.  Result storage must be writable
+ * and outside the heap; missing storage returns INVALID_POINTER.
+ */
 extern "C" YUPITER_PUBLIC yupiter_memory_status
     yupiter_realloc_checked(void *p, std::size_t size, void **result)
 {
