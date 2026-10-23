@@ -38,7 +38,7 @@ set -eu
 package=yupiter
 version_major=1
 version_minor=0
-version_patch=1
+version_patch=2
 version="${version_major}.${version_minor}.${version_patch}"
 soversion="${version_major}"
 
