@@ -249,6 +249,23 @@ configured.
 
     make install DESTDIR=/tmp/stage
 
+When the shared object is installed into the running system (DESTDIR
+is empty), "make install" refreshes the dynamic linker cache with
+ldconfig, so a program linked with "-lyupiter" finds libyupiter.so.1
+without LD_LIBRARY_PATH.  A staged installation is left untouched: the
+package manager of the target system runs the target's ldconfig when
+the package is unpacked.  The refresh is also skipped when only the
+static archive is built.
+
+If ldconfig is unavailable or cannot write the cache, the files are
+still installed and a warning explains what to run.  The program is
+"ldconfig" by default; "make install LDCONFIG=..." selects another
+one, and an empty LDCONFIG disables the refresh.  "make uninstall"
+refreshes the cache again after removing the files.  A prefix that is
+not already in the loader's search path, such as a per-user
+installation, still needs an entry in /etc/ld.so.conf.d/ or
+LD_LIBRARY_PATH; "make install" reports that case after the refresh.
+
 Installed are the two headers (yupiter.h and yupiter.hpp), the static
 archive, the shared object with its two links, the pkg-config file and
 the CMake package configuration.
