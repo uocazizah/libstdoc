@@ -217,7 +217,7 @@ point from it.  A hosted program that links the archive does not pull
 that member in, because nothing refers to "_start" in such a program,
 and its own C runtime keeps providing the entry point.
 
-libyupiter.so.1.0.0 is the hosted shared object.  It excludes the
+libyupiter.so.1.0.1 is the hosted shared object.  It excludes the
 startup file, carries SONAME libyupiter.so.1 and the usual two links
 (name and soname), and names no shared library it needs: no C library
 and no C++ runtime.  It is loaded by a program that already has an
