@@ -233,6 +233,50 @@ jobs:
           /tmp/reference-format > /tmp/expected-format.txt
           diff -u test/expected-format.txt /tmp/expected-format.txt
 
+  python-binding:
+    name: python binding (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-26.04
+          - arch: aarch64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure and build yupiter
+        run: |
+          ./configure \
+              --cc=gcc \
+              --cxx=g++ \
+              --build-type=relwithdebinfo \
+              --heap-size=4096 \
+              --enable-static=yes \
+              --enable-shared=yes \
+              --enable-tests=no
+          make -j"$(nproc)"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin patchelf
+
+      - name: Build Python wheel
+        run: |
+          cd python
+          maturin build --release --out dist
+
+      - name: Install wheel
+        run: pip install python/dist/yupiter-*.whl --break-system-packages
+
+      - name: Run Python tests
+        run: python test/test_python_binding.py
+
   configure-guard:
     name: the configure script refuses what it documents as impossible
     runs-on: ubuntu-26.04
