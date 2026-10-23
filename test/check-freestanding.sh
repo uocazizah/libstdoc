@@ -14,8 +14,9 @@
 #
 # What is verified for the archive:
 #
-#   1. Every undefined symbol is "main" or a "yupiter_"-prefixed symbol
-#      of the library itself.  "__cxa_*", "_Unwind_*", "operator new",
+#   1. Every undefined symbol is "main", the linker-defined
+#      "_GLOBAL_OFFSET_TABLE_", or a "yupiter_"-prefixed symbol of the
+#      library itself.  "__cxa_*", "_Unwind_*", "operator new",
 #      "memset", "memcpy" or a compiler helper such as "__udivti3" is a
 #      dependence the archive must not have.
 #
@@ -91,8 +92,11 @@ do
 
     name=${line%% *}
 
+    # "_GLOBAL_OFFSET_TABLE_" is synthesized by the linker for
+    # position-independent code that reads a default-visible object
+    # through the GOT.  It is not provided by a C library or a runtime.
     case "$name" in
-        main|yupiter_*)
+        main|yupiter_*|_GLOBAL_OFFSET_TABLE_)
             ;;
         *)
             echo "check-freestanding: \"$archive\" refers to \"$name\"" >&2
