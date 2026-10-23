@@ -1,0 +1,16 @@
+[package]
+name = "yupiter"
+version = "1.0.2"
+edition = "2021"
+license = "GPL-3.0-or-later OR LGPL-2.1-or-later OR Apache-2.0"
+
+[lib]
+name = "yupiter"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["abi3-py312", "extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = true
