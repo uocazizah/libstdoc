@@ -38,6 +38,10 @@ CMake, Python or generator is required on the build host.
     make check
     make install
 
+"make install" refreshes the dynamic linker cache with ldconfig when
+the shared object is installed into the running system.  A staged
+installation with DESTDIR leaves the cache to the package manager.
+
 "make" builds both libyupiter.a and libyupiter.so by default.  The
 configure script detects Linux and the target architecture, checks
 that the compiler can build the freestanding C++23 implementation, and
