@@ -39,6 +39,10 @@ heap
     allocation and release algorithms, the safe variants and their
     failure modes, and the accounting the tests rely on.
 
+python-binding
+    Python binding of the public C17 interface, built with PyO3
+    and maturin, linking against libyupiter.so.
+
 
 Reading order for a first-time reader
 -------------------------------------
