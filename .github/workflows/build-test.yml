@@ -196,12 +196,14 @@ jobs:
       - name: Inspect the shared-only build
         if: matrix.tests == 'no'
         run: |
-          test -f build/libyupiter.so.1.0.0
+          version=$(sed -n 's/^VERSION[[:space:]]*:=[[:space:]]*//p' config.mk)
+          test -n "$version"
+          test -f "build/libyupiter.so.$version"
           test -L build/libyupiter.so.1
           test -L build/libyupiter.so
-          readelf -d build/libyupiter.so.1.0.0 |
+          readelf -d "build/libyupiter.so.$version" |
               grep -F 'SONAME' | grep -F 'libyupiter.so.1'
-          nm -D --defined-only build/libyupiter.so.1.0.0 |
+          nm -D --defined-only "build/libyupiter.so.$version" |
               grep -E ' T yupiter_(printf|fprintf|malloc|free|realloc)$'
 
   golden-files:
