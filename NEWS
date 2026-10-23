@@ -1,6 +1,28 @@
 yupiter news
 ===============
 
+1.0.2
+-----
+
+Released 23 October 2026.
+
+This patch keeps the C17 interface, the C++23 implementation and the
+ABI unchanged.
+
+Build
+~~~~~
+  * "make install" refreshes the dynamic linker cache with ldconfig
+    when the shared object is installed into the running system, so a
+    program linked with "-lyupiter" finds libyupiter.so.1 without
+    LD_LIBRARY_PATH.  A staged installation with DESTDIR leaves the
+    cache to the package manager.  The program is "ldconfig" by
+    default; "make install LDCONFIG=..." selects another one, and an
+    empty LDCONFIG disables the refresh.  "make uninstall" refreshes
+    the cache again after removing the files.
+  * The shared object is libyupiter.so.1.0.2; its SONAME remains
+    libyupiter.so.1.
+
+
 1.0.1
 -----
 
