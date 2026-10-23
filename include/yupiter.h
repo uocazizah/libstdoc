@@ -291,6 +291,30 @@ YUPITER_PUBLIC void *yupiter_realloc(void *p, size_t size);
 YUPITER_PUBLIC void *yupiter_realloc_safe(void *p, size_t count, size_t size);
 
 /*
+ * Non-terminating checked operations for hosted callers such as language
+ * bindings.  Existing safe functions retain their fatal failure policy.
+ */
+typedef enum yupiter_memory_status
+{
+    YUPITER_MEMORY_OK = 0,
+    YUPITER_MEMORY_INVALID_POINTER = 1,
+    YUPITER_MEMORY_OUT_OF_MEMORY = 2,
+    YUPITER_MEMORY_OVERFLOW = 3
+} yupiter_memory_status;
+
+/* Null is accepted; invalid or corrupt blocks are rejected without writes. */
+YUPITER_PUBLIC yupiter_memory_status yupiter_free_checked(void *p);
+
+/*
+ * Same resize and zero-size rules as yupiter_realloc, with an explicit
+ * result status.  "result" must point to writable pointer storage that
+ * does not overlap the heap.  On failure *result is null and the original
+ * block remains live and unchanged.  No failure terminates the process.
+ */
+YUPITER_PUBLIC yupiter_memory_status yupiter_realloc_checked(void *p, size_t size,
+                                                          void **result);
+
+/*
  * The format-checking macro is an internal detail of the two
  * declarations above; it is undefined here so that the public
  * namespace keeps only the documented names.

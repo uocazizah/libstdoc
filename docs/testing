@@ -70,6 +70,8 @@ What is registered today
                           holds no section that runs code before the
                           program; the shared object exports only the C
                           interface and names no library it needs
+    artifact_paths        the checker inspects literal artifact filenames,
+                          including @response and option-like names
     install_and_consume   the library installs, and a separate project
                           builds and runs against the installation
 

@@ -7,34 +7,24 @@ import ctypes
 import subprocess
 import sys
 
-sys.path.insert(0, "/usr/lib/python3.14/site-packages")
-
 import yupiter
 
 
-FATAL_IMPORT = (
-    "import sys; "
-    "sys.path.insert(0, '/usr/lib/python3.14/site-packages'); "
-    "import yupiter"
-)
-
-
-def _run_fatal(code):
+def _run_python(code):
     return subprocess.run(
-        [sys.executable, "-c", FATAL_IMPORT + "; " + code],
+        [sys.executable, "-c", "import yupiter; " + code],
         capture_output=True,
         text=True,
+        timeout=10,
     )
 
 
-def _expect_panic(callable_):
+def _expect_error(error_type, callable_):
     try:
         callable_()
-    except BaseException as exc:  # PanicException is not an Exception
-        if type(exc).__name__ != "PanicException":
-            raise
+    except error_type as exc:
         return str(exc)
-    raise AssertionError("expected PanicException")
+    raise AssertionError(f"expected {error_type.__name__}")
 
 
 # --- Module and constants ---
@@ -228,14 +218,13 @@ def test_malloc_safe_zero_filled():
 
 
 def test_malloc_safe_overflow():
-    message = _expect_panic(lambda: yupiter.yupiter_malloc_safe(1 << 63, 2))
+    message = _expect_error(OverflowError, lambda: yupiter.yupiter_malloc_safe(1 << 63, 2))
     assert "overflow" in message
 
 
 def test_malloc_safe_oom():
-    result = _run_fatal("yupiter.yupiter_malloc_safe(1, 100000)")
-    assert result.returncode == 134
-    assert "out of memory" in result.stderr
+    _expect_error(MemoryError, lambda: yupiter.yupiter_malloc_safe(1, 100000))
+    test_malloc_safe()
 
 
 def test_free_safe_null():
@@ -248,10 +237,9 @@ def test_free_safe_valid():
     yupiter.yupiter_free_safe(ptr)
 
 
-def test_free_safe_invalid_is_fatal():
-    result = _run_fatal("yupiter.yupiter_free_safe(12345)")
-    assert result.returncode == 134
-    assert "outside the yupiter heap" in result.stderr
+def test_free_safe_invalid():
+    _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(12345))
+    test_malloc_safe()
 
 
 def test_realloc_safe():
@@ -270,25 +258,66 @@ def test_realloc_safe_zero():
 
 
 def test_realloc_safe_overflow():
-    message = _expect_panic(
+    message = _expect_error(
+        OverflowError,
         lambda: yupiter.yupiter_realloc_safe(0, 1 << 63, 2)
     )
     assert "overflow" in message
 
 
-def test_realloc_safe_invalid_is_fatal():
-    result = _run_fatal("yupiter.yupiter_realloc_safe(12345, 1, 4)")
-    assert result.returncode == 134
-    assert "outside the yupiter heap" in result.stderr
+def test_realloc_safe_invalid():
+    _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(12345, 1, 4))
+    _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(12345, 0, 4))
+    test_malloc_safe()
 
 
-def test_realloc_safe_oom_is_fatal():
-    result = _run_fatal(
-        "p = yupiter.yupiter_malloc(8); "
-        "yupiter.yupiter_realloc_safe(p, 1, 100000)"
-    )
-    assert result.returncode == 134
-    assert "out of memory" in result.stderr
+def test_realloc_safe_oom():
+    ptr = yupiter.yupiter_malloc_safe(1, 8)
+    ctypes.memmove(ptr, b"SURVIVED", 8)
+    try:
+        _expect_error(MemoryError, lambda: yupiter.yupiter_realloc_safe(ptr, 1, 100000))
+        assert ctypes.string_at(ptr, 8) == b"SURVIVED"
+    finally:
+        yupiter.yupiter_free_safe(ptr)
+
+
+def test_safe_invalid_pointers():
+    ptr = yupiter.yupiter_malloc(16)
+    assert ptr is not None
+    _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(ptr + 1))
+    _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(ptr + 1, 1, 8))
+    yupiter.yupiter_free_safe(ptr)
+    _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(ptr))
+    _expect_error(ValueError, lambda: yupiter.yupiter_realloc_safe(ptr, 1, 8))
+    test_malloc_safe()
+
+
+def test_realloc_safe_zero_product():
+    for count, size in [(0, 4), (2, 0)]:
+        assert yupiter.yupiter_realloc_safe(0, count, size) == 0
+        ptr = yupiter.yupiter_malloc(8)
+        assert ptr is not None
+        assert yupiter.yupiter_realloc_safe(ptr, count, size) == 0
+        _expect_error(ValueError, lambda: yupiter.yupiter_free_safe(ptr))
+
+
+def test_output_is_literal():
+    # Run in a child so a regression cannot crash or flood the test runner.
+    text = "100% literal: %s %p %08x %n %% %*s %999999999d café\n"
+    for stream, output in [(None, "stdout"), ("STDOUT", "stdout"), ("STDERR", "stderr")]:
+        if stream is None:
+            call = f"yupiter.yupiter_printf({text!r})"
+        else:
+            call = f"yupiter.yupiter_fprintf(yupiter.{stream}, {text!r})"
+        result = _run_python(f"assert {call} == {len(text.encode('utf-8'))}")
+        assert result.returncode == 0, result.stderr
+        assert getattr(result, output) == text
+        assert getattr(result, "stderr" if output == "stdout" else "stdout") == ""
+
+
+def test_output_embedded_null():
+    assert yupiter.yupiter_printf("before\0after") is None
+    assert yupiter.yupiter_fprintf(yupiter.STDOUT, "before\0after") is None
 
 
 def test_realloc_safe_preserves_contents():
@@ -339,12 +368,16 @@ if __name__ == "__main__":
     test_malloc_safe_oom()
     test_free_safe_null()
     test_free_safe_valid()
-    test_free_safe_invalid_is_fatal()
+    test_free_safe_invalid()
     test_realloc_safe()
     test_realloc_safe_zero()
     test_realloc_safe_overflow()
-    test_realloc_safe_invalid_is_fatal()
-    test_realloc_safe_oom_is_fatal()
+    test_realloc_safe_invalid()
+    test_realloc_safe_oom()
     test_realloc_safe_preserves_contents()
     test_realloc_safe_from_null()
+    test_safe_invalid_pointers()
+    test_realloc_safe_zero_product()
+    test_output_is_literal()
+    test_output_embedded_null()
     print("All tests passed.")

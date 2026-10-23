@@ -284,3 +284,16 @@ Design notes and limits
   * The tests never allocate more than a few kilobytes, so a leak in a
     test stays that small by construction, and the accounting turns it
     into a failing check anyway.
+
+Non-terminating checked operations
+---------------------------------
+
+yupiter_free_checked(p) and yupiter_realloc_checked(p, size, &result)
+return yupiter_memory_status: OK, INVALID_POINTER, OUT_OF_MEMORY, or
+OVERFLOW (with the YUPITER_MEMORY_ prefix).  They never invoke the fatal
+handler.  The resize follows the same content and zero-size rules as
+yupiter_realloc, clears result on failure, and leaves the original live
+block unchanged.  Result storage must be writable and outside the heap.
+A null free is successful; an invalid or corrupt pointer is rejected.
+These additive interfaces support hosted language bindings while the
+existing native safe functions retain their status-134 failure policy.

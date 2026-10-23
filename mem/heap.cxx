@@ -1145,6 +1145,39 @@ extern "C" YUPITER_PUBLIC void *yupiter_realloc_safe(void *p, std::size_t count,
     return p_result;
 }
 
+extern "C" YUPITER_PUBLIC yupiter_memory_status yupiter_free_checked(void *p)
+{
+    if (p == nullptr)
+    {
+        return YUPITER_MEMORY_OK;
+    }
+
+    yupiter_heap_initialise();
+    return (yupiter_heap_release(p) == release_result::accept)
+               ? YUPITER_MEMORY_OK : YUPITER_MEMORY_INVALID_POINTER;
+}
+
+extern "C" YUPITER_PUBLIC yupiter_memory_status
+    yupiter_realloc_checked(void *p, std::size_t size, void **result)
+{
+    if (result == nullptr)
+    {
+        return YUPITER_MEMORY_INVALID_POINTER;
+    }
+
+    switch (yupiter_heap_resize(p, size, result))
+    {
+        case resize_status::accept:
+            return YUPITER_MEMORY_OK;
+        case resize_status::out_of_memory:
+            return YUPITER_MEMORY_OUT_OF_MEMORY;
+        case resize_status::overflow:
+            return YUPITER_MEMORY_OVERFLOW;
+        default:
+            return YUPITER_MEMORY_INVALID_POINTER;
+    }
+}
+
 extern "C" std::size_t yupiter_heap_live_bytes(void)
 {
     return yupiter_heap_used_bytes;

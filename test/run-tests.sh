@@ -250,6 +250,8 @@ else
     fail archive_is_freestanding "no static archive at $archive"
 fi
 
+check_status artifact_paths sh "$srcdir/test/check-artifact-paths.sh" "$archive" "$shared"
+
 # Install into a staging tree and build a consumer against it.
 if sh "$srcdir/test/install-test.sh" "$builddir"
 then

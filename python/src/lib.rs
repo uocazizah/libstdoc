@@ -1,3 +1,4 @@
+use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyValueError};
 use pyo3::prelude::*;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -5,10 +6,10 @@ use std::os::raw::{c_char, c_void};
 // FFI declarations - use link_name to reference C symbols while avoiding naming conflicts
 extern "C" {
     #[link_name = "yupiter_printf"]
-    fn ffi_printf(format: *const c_char) -> i32;
+    fn ffi_printf(format: *const c_char, ...) -> i32;
 
     #[link_name = "yupiter_fprintf"]
-    fn ffi_fprintf(stream: *mut c_void, format: *const c_char) -> i32;
+    fn ffi_fprintf(stream: *mut c_void, format: *const c_char, ...) -> i32;
 
     #[link_name = "yupiter_malloc"]
     fn ffi_malloc(size: usize) -> *mut c_void;
@@ -19,14 +20,15 @@ extern "C" {
     #[link_name = "yupiter_realloc"]
     fn ffi_realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
 
-    #[link_name = "yupiter_malloc_safe"]
-    fn ffi_malloc_safe(count: usize, size: usize) -> *mut c_void;
+    #[link_name = "yupiter_free_checked"]
+    fn ffi_free_checked(ptr: *mut c_void) -> std::os::raw::c_int;
 
-    #[link_name = "yupiter_free_safe"]
-    fn ffi_free_safe(ptr: *mut c_void);
-
-    #[link_name = "yupiter_realloc_safe"]
-    fn ffi_realloc_safe(ptr: *mut c_void, count: usize, size: usize) -> *mut c_void;
+    #[link_name = "yupiter_realloc_checked"]
+    fn ffi_realloc_checked(
+        ptr: *mut c_void,
+        size: usize,
+        result: *mut *mut c_void,
+    ) -> std::os::raw::c_int;
 
     #[link_name = "yupiter_stdout"]
     static ffi_stdout: *mut c_void;
@@ -43,7 +45,7 @@ extern "C" {
 #[pyfunction]
 fn yupiter_printf(format: &str) -> Option<i32> {
     let c_str = CString::new(format).ok()?;
-    let result = unsafe { ffi_printf(c_str.as_ptr()) };
+    let result = unsafe { ffi_printf(c"%s".as_ptr(), c_str.as_ptr()) };
     if result < 0 {
         None
     } else {
@@ -54,7 +56,7 @@ fn yupiter_printf(format: &str) -> Option<i32> {
 #[pyfunction]
 fn yupiter_fprintf(stream: usize, format: &str) -> Option<i32> {
     let c_str = CString::new(format).ok()?;
-    let result = unsafe { ffi_fprintf(stream as *mut c_void, c_str.as_ptr()) };
+    let result = unsafe { ffi_fprintf(stream as *mut c_void, c"%s".as_ptr(), c_str.as_ptr()) };
     if result < 0 {
         None
     } else {
@@ -91,42 +93,50 @@ fn yupiter_realloc(ptr: usize, size: usize) -> Option<usize> {
 
 // --- Safe memory functions ---
 
-#[pyfunction]
-fn yupiter_malloc_safe(count: usize, size: usize) -> usize {
-    if count != 0 && size > usize::MAX / count {
-        panic!("size overflow");
+fn allocation_size(count: usize, size: usize) -> PyResult<usize> {
+    count
+        .checked_mul(size)
+        .ok_or_else(|| PyOverflowError::new_err("allocation size overflows"))
+}
+
+fn memory_status(status: std::os::raw::c_int) -> PyResult<()> {
+    match status {
+        0 => Ok(()),
+        2 => Err(PyMemoryError::new_err("out of memory")),
+        3 => Err(PyOverflowError::new_err("allocation size overflows")),
+        _ => Err(PyValueError::new_err("invalid or corrupted heap pointer")),
     }
-    let total = count * size;
-    let ptr = unsafe { ffi_malloc_safe(count, size) };
+}
+
+#[pyfunction]
+fn yupiter_malloc_safe(count: usize, size: usize) -> PyResult<usize> {
+    let total = allocation_size(count, size)?;
+    if total == 0 {
+        return Ok(0);
+    }
+    let ptr = unsafe { ffi_malloc(total) };
     if ptr.is_null() {
-        if total == 0 {
-            return 0;
-        }
-        panic!("allocation failed");
+        return Err(PyMemoryError::new_err("out of memory"));
     }
-    ptr as usize
+    // The allocation is live and has at least total writable bytes.
+    unsafe { std::ptr::write_bytes(ptr.cast::<u8>(), 0, total) };
+    Ok(ptr as usize)
 }
 
 #[pyfunction]
-fn yupiter_free_safe(ptr: usize) {
-    if ptr != 0 {
-        unsafe { ffi_free_safe(ptr as *mut c_void) };
-    }
+fn yupiter_free_safe(ptr: usize) -> PyResult<()> {
+    memory_status(unsafe { ffi_free_checked(ptr as *mut c_void) })
 }
 
 #[pyfunction]
-fn yupiter_realloc_safe(ptr: usize, count: usize, size: usize) -> usize {
-    if count != 0 && size > usize::MAX / count {
-        panic!("size overflow");
+fn yupiter_realloc_safe(ptr: usize, count: usize, size: usize) -> PyResult<usize> {
+    let total = allocation_size(count, size)?;
+    if ptr == 0 {
+        return yupiter_malloc_safe(count, size);
     }
-    let result = unsafe { ffi_realloc_safe(ptr as *mut c_void, count, size) };
-    if result.is_null() {
-        if count == 0 && size == 0 {
-            return 0;
-        }
-        panic!("reallocation failed");
-    }
-    result as usize
+    let mut result = std::ptr::null_mut();
+    memory_status(unsafe { ffi_realloc_checked(ptr as *mut c_void, total, &mut result) })?;
+    Ok(result as usize)
 }
 
 // --- Module definition ---
