@@ -174,7 +174,8 @@ Installation
 Archive inspection
     test/check-freestanding.sh runs nm and readelf over the built
     archive and requires three properties of every member: every
-    undefined symbol is "main" or a "yupiter"-prefixed symbol of the
+    undefined symbol is "main", the linker-defined
+    "_GLOBAL_OFFSET_TABLE_", or a "yupiter"-prefixed symbol of the
     library, no exported symbol is outside the C interface (only
     "yupiter_*" and "_start"), and no member holds an ".init_array",
     ".ctors", ".tdata" or similar section.  A static library is never
