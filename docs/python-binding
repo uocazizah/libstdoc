@@ -1,0 +1,95 @@
+python binding for yupiter
+==========================
+
+A PyO3 binding of the public C17 interface of yupiter to Python.
+The binding is not part of the library build; it lives in python/
+and is built with maturin.  It links against the installed shared
+object (libyupiter.so) and exposes every function declared in
+include/yupiter.h.
+
+Requirements
+------------
+
+  * Rust 1.83 or newer.
+  * Python 3.12 or newer.
+  * A built yupiter library ("make" in the repository root).
+  * patchelf, for the wheel packaging step.
+
+Build
+-----
+
+    cd python
+    maturin build --release
+
+The wheel is written to python/target/wheels/.  Install it with:
+
+    pip install python/target/wheels/yupiter-*.whl
+
+For iterative development:
+
+    maturin develop --release
+
+Structure
+---------
+
+    python/Cargo.toml         Rust crate manifest; abi3-py312.
+    python/pyproject.toml     maturin build system configuration.
+    python/build.rs           Builds yupiter and links libyupiter.so.
+    python/src/lib.rs         The binding: FFI declarations and the
+                              #[pymodule] definition.
+    python/yupiter_py/        Python package init.
+
+Exposed symbols
+---------------
+
+Output:
+    yupiter_printf(format) -> int | None
+    yupiter_fprintf(stream, format) -> int | None
+
+Memory:
+    yupiter_malloc(size) -> int | None
+    yupiter_free(ptr)
+    yupiter_realloc(ptr, size) -> int | None
+
+Safe memory:
+    yupiter_malloc_safe(count, size) -> int
+    yupiter_free_safe(ptr)
+    yupiter_realloc_safe(ptr, count, size) -> int
+
+Constants:
+    yupiter.STDOUT, yupiter.STDERR, yupiter.STDIN
+
+Design notes
+------------
+
+The binding links against libyupiter.so (dylib), not libyupiter.a.
+The static archive contains the freestanding startup file, which
+defines _start and conflicts with the Python interpreter's entry
+point.  The shared object excludes it.
+
+The FFI declarations use link_name to reference the C symbols
+(yupiter_printf, etc.) while the Rust functions are named the same.
+This avoids the duplicate-name error that would otherwise arise.
+
+The safe allocator variants do not call exit(134) as the C library
+does.  They panic instead, so a Python caller receives an exception
+rather than a terminated process.
+
+printf and fprintf accept a pre-formatted string.  The variadic C
+function cannot be bound directly by the PyO3 macro, so formatting
+is done in Python before the call.
+
+Pointer arguments and return values are passed as integers.  This
+matches the freestanding design, which does not expose the layout
+of yupiter_FILE.
+
+Test
+----
+
+    python test/test_python_binding.py
+
+See also
+--------
+
+    docs/repository
+    docs/building
