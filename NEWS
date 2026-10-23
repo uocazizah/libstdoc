@@ -1,6 +1,28 @@
 yupiter news
 ===============
 
+1.0.1
+-----
+
+Released 22 October 2026.
+
+This patch keeps the C17 interface, the C++23 implementation and the
+ABI unchanged.
+
+Build
+~~~~~
+  * ./configure recognizes GNU C++ when the compiler driver is invoked
+    as "c++" and its --version banner names the distribution rather
+    than GCC.  The compiler family is read from the driver's own -v
+    output, while --version remains part of the error message.
+  * test/check-freestanding.sh accepts the linker-defined
+    "_GLOBAL_OFFSET_TABLE_" symbol emitted by x86_64 GCC position-
+    independent code.  It is resolved by the linker and is not a C
+    library or C++ runtime dependency.
+  * The shared object is libyupiter.so.1.0.1; its SONAME remains
+    libyupiter.so.1.
+
+
 1.0.0
 -----
 
