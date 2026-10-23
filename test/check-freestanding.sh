@@ -48,6 +48,17 @@ fi
 archive=$1
 shared=${2:-}
 
+# Binutils expands @response files even after --.  Give every relative
+# artifact an explicit path before checking or passing it to a tool.
+case "$archive" in
+    /*) ;;
+    *) archive=./$archive ;;
+esac
+case "$shared" in
+    ''|/*) ;;
+    *) shared=./$shared ;;
+esac
+
 if [ ! -f "$archive" ]
 then
     echo "check-freestanding: \"$archive\" does not exist" >&2
@@ -64,7 +75,7 @@ status=0
 
 # --- Undefined symbols of the archive ---------------------------------
 
-if ! "$nm" --format=posix --extern-only --undefined-only "$archive" \
+if ! "$nm" --format=posix --extern-only --undefined-only -- "$archive" \
         > "$tmpdir/undefined" 2> "$tmpdir/nmerr"
 then
     echo "check-freestanding: nm failed on \"$archive\":" >&2
@@ -109,7 +120,7 @@ done < "$tmpdir/undefined"
 
 # --- Exported symbols of the archive ----------------------------------
 
-if ! "$nm" --format=posix --extern-only --defined-only "$archive" \
+if ! "$nm" --format=posix --extern-only --defined-only -- "$archive" \
         > "$tmpdir/defined" 2> "$tmpdir/nmerr"
 then
     echo "check-freestanding: nm failed on \"$archive\":" >&2
@@ -162,7 +173,7 @@ done < "$tmpdir/defined"
 for section in .init_array .fini_array .preinit_array .ctors .dtors \
                .tdata .tbss
 do
-    if "$readelf" --section-headers --wide "$archive" |
+    if "$readelf" --section-headers --wide -- "$archive" |
        grep -q -- "$section"
     then
         echo "check-freestanding: \"$archive\" has a \"$section\" section;" >&2
@@ -175,7 +186,7 @@ done
 
 if [ -n "$shared" ] && [ -f "$shared" ]
 then
-    if ! "$nm" --format=posix -D --undefined-only "$shared" \
+    if ! "$nm" --format=posix -D --undefined-only -- "$shared" \
             > "$tmpdir/dynundef" 2> "$tmpdir/nmerr"
     then
         echo "check-freestanding: nm failed on \"$shared\":" >&2
@@ -191,7 +202,7 @@ then
         status=1
     fi
 
-    if ! "$nm" --format=posix -D --defined-only "$shared" \
+    if ! "$nm" --format=posix -D --defined-only -- "$shared" \
             > "$tmpdir/dyndefined" 2> "$tmpdir/nmerr"
     then
         echo "check-freestanding: nm failed on \"$shared\":" >&2
@@ -219,7 +230,8 @@ then
         case "$name" in
             yupiter_printf|yupiter_fprintf|yupiter_malloc|yupiter_free|\
             yupiter_malloc_safe|yupiter_free_safe|yupiter_realloc|\
-            yupiter_realloc_safe|yupiter_stdout|yupiter_stderr|\
+            yupiter_realloc_safe|yupiter_free_checked|yupiter_realloc_checked|\
+            yupiter_stdout|yupiter_stderr|\
             yupiter_stdin)
                 ;;
             *)
@@ -230,7 +242,7 @@ then
         esac
     done < "$tmpdir/dyndefined"
 
-    if "$readelf" -d "$shared" > "$tmpdir/dynamic"
+    if "$readelf" -d -- "$shared" > "$tmpdir/dynamic"
     then
         if grep -q 'NEEDED' "$tmpdir/dynamic"
         then
@@ -247,7 +259,7 @@ then
     for section in .init_array .fini_array .preinit_array .ctors .dtors \
                    .tdata .tbss
     do
-        if "$readelf" --section-headers --wide "$shared" |
+        if "$readelf" --section-headers --wide -- "$shared" |
            grep -q -- "$section"
         then
             echo "check-freestanding: \"$shared\" has a \"$section\"" >&2

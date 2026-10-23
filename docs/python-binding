@@ -4,7 +4,7 @@ python binding for yupiter
 A PyO3 binding of the public C17 interface of yupiter to Python.
 The binding is not part of the library build; it lives in python/
 and is built with maturin.  It links against the installed shared
-object (libyupiter.so) and exposes every function declared in
+object (libyupiter.so) and exposes output and allocation functions from
 include/yupiter.h.
 
 Requirements
@@ -71,13 +71,23 @@ The FFI declarations use link_name to reference the C symbols
 (yupiter_printf, etc.) while the Rust functions are named the same.
 This avoids the duplicate-name error that would otherwise arise.
 
-The safe allocator variants do not call exit(134) as the C library
-does.  They panic instead, so a Python caller receives an exception
-rather than a terminated process.
+The Python safe allocator variants use non-terminating native operations.
+They raise OverflowError for size overflow, MemoryError for exhaustion,
+and ValueError for invalid, freed or corrupt pointers.  Zero-size
+allocation returns 0; zero-size resize releases the block and returns 0.
+New allocations are zero-filled; growth preserves existing bytes and
+leaves additional bytes uninitialised.  Native C safe functions keep
+terminating with status 134 on failure.
+
+This repairs the documented promise of Python exceptions.  Earlier
+bindings terminated the interpreter on native failures and raised a
+PyO3 PanicException on multiplication overflow; callers should now catch
+the standard Python exceptions above.
 
 printf and fprintf accept a pre-formatted string.  The variadic C
 function cannot be bound directly by the PyO3 macro, so formatting
-is done in Python before the call.
+is done in Python before the call.  Both wrappers pass a constant
+"%s" native format, so percent directives in the text print literally.
 
 Pointer arguments and return values are passed as integers.  This
 matches the freestanding design, which does not expose the layout
