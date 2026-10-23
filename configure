@@ -38,7 +38,7 @@ set -eu
 package=yupiter
 version_major=1
 version_minor=0
-version_patch=0
+version_patch=1
 version="${version_major}.${version_minor}.${version_patch}"
 soversion="${version_major}"
 
@@ -269,14 +269,18 @@ command -v "${readelf}" >/dev/null 2>&1 ||
 command -v "${install}" >/dev/null 2>&1 ||
     fail "the install tool \"${install}\" was not found"
 
+# The first line of --version carries the distribution's branding
+# ("c++ (Ubuntu ...)"), so identify the compiler family from the
+# driver's own -v banner instead.  --version is kept for diagnostics.
 compiler_name=$("${cxx}" --version 2>/dev/null | head -n 1 || true)
+compiler_details=$("${cxx}" -v 2>&1 || true)
 
-case "${compiler_name}" in
-    *GCC*|*gcc*|*G++*|*g++*|*Clang*|*clang*)
+case "${compiler_details}" in
+    *"gcc version"*|*"clang version"*)
         ;;
     *)
-        fail "the C++ compiler \"${cxx}\" is not GNU C++ or Clang: "
-        fail "${compiler_name:-unknown compiler}"
+        fail "the C++ compiler \"${cxx}\" is not GNU C++ or Clang:" \
+            "${compiler_name:-unknown compiler}"
         ;;
 esac
 
