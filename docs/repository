@@ -297,8 +297,7 @@ Top-level files
 
     README            Project overview, repository structure and the
                       license summary.  Points here for details.
-    NEWS              Release notes, newest release first: 1.0.0, the
-                      first stable release under the yupiter name, then
+    NEWS              Release notes, newest release first, followed by
                       the history of the project under its former name.
     ChangeLog         States that Git holds the detailed history.
     AUTHORS           The project founder, maintainer and developer.
