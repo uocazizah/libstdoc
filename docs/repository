@@ -23,6 +23,11 @@ Top-level entries
 
     .github/          Automation: the build and test workflows,
                       dependency updates and code scanning.
+    python/           Python binding (PyO3/maturin): Cargo.toml,
+                       pyproject.toml, build.rs and src/lib.rs.  Not
+                       part of the library build; requires a built
+                       yupiter and links against libyupiter.so.
+                       Documented in docs/python-binding.
     .gitignore        Ignore rules for objects, libraries and builds.
     AGENTS.md         Conventions for automated agents working here.
     AUTHORS           Who maintains the project.
